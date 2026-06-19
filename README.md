@@ -58,6 +58,10 @@ npm run dev
 npm run capture:report  # public/report-captures/*.png 생성
 ```
 
+## 배포
+- GitHub repository: https://github.com/kyowon1108/afterglow-computer-graphics-final
+- GitHub Pages: https://kyowon1108.github.io/afterglow-computer-graphics-final/
+
 ## 조작
 - 마우스: 1인칭 시점 둘러보기. 화면 중앙 조준점이 초록색이면 상호작용 대상이다.
 - WASD / 방향키: 이동.
