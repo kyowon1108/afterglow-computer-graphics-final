@@ -1,0 +1,7 @@
+AFTERGLOW asset fallback manifest
+ambientCG IDs: PavingStones033, Rock013, Concrete042A; gate_stone reuses floor.
+RobotExpressive.glb primary: https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/RobotExpressive/RobotExpressive.glb
+Runtime uses public PBR textures when present; otherwise procedural CanvasTexture / capsule fallback.
+
+Downloaded: floor_tile: basecolor.jpg, normal.jpg, roughness.jpg, ao.jpg | wall_rock: basecolor.jpg, normal.jpg, roughness.jpg, ao.jpg | bounce_panel: basecolor.jpg, normal.jpg, roughness.jpg, ao.jpg | RobotExpressive.glb
+Fallbacks: none
