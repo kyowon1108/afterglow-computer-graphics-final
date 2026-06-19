@@ -38,6 +38,38 @@
 - **로직 레이어(CPU·결정적):** `SurfelSolver.js`, `sampleField.js`, `rules.js`, `levels.js`, `math.js`. 표면 surfel의 직접광 + 거울 재방출 + 2회 바운스를 계산해 각 바닥의 복사휘도를 구하고, 그 밝기가 임계값(WALK_ON 0.60)을 넘으면 그 자리를 solid로 판정한다. **GPU 읽기를 쓰지 않아** 하드웨어와 무관하게 같은 결과가 나오고, headless로 검증된다.
 - **시각 레이어:** 같은 surfel 값을 타일 emissive·포인트 라이트·블룸·아웃라인으로 그려서 보여준다.
 
+핵심 로직 발췌 (`src/gi/SurfelSolver.js`, `sampleField.js`) — 강의 이론이 코드로 어떻게 들어갔는지:
+
+```js
+// ① 직접광 Lₑ — (ωᵢ·n) 코사인 · 역제곱 감쇠 · 가림(shadow) · 조준 원뿔 (강의 L4 렌더링 방정식)
+function addDirectContribution(surfel, emitter, level, bucket) {
+  if (!visible(emitter.pos, surfel.pos, level.walls)) return;                   // 가시성(occlusion)
+  const cosT = targetCosTerm(surfel, emitter.pos);                              // (ωᵢ·n)
+  const cone = coneWeight(emitter.pos, surfel.pos, emitter.emitDir, emitter.coneDeg); // 조준 방향
+  const d2   = Math.max(distanceSq3(emitter.pos, surfel.pos), 0.25);            // 역제곱
+  addColor(bucket, scaledColor(emitter.rgb, (emitter.intensity * cosT * cone) / d2));
+}
+
+// ② 간접광 ∫ — 이웃 surfel의 빛을 form factor로 누적(2회 바운스 radiosity) (강의 L8 SurfelGI)
+function formFactor(target, source) {            // cosθ_s · cosθ_n / (π·d²)
+  const dir = normalize3(sub3(source.pos, target.pos));
+  const cosS = normalCos(target, dir), cosN = normalCos(source, neg(dir));
+  return (cosS * cosN) / (Math.PI * Math.max(distanceSq3(target.pos, source.pos), 0.25));
+}
+// computeBounce: addColor(target[pass], albedo·sourceEnergy · f · AREA · GAIN); clampIndirect(...) // 에너지 클램프
+
+// ③ "밟을 수 있는가" = 복사휘도 임계값 (+색 게이트는 색조 일치) → 이것이 곧 게임 규칙
+function updateWalkable(surfel) {
+  const E = surfel.gameplayIrradiance;           // placed + 거울 재방출 + 바운스 (carried 빛 제외)
+  surfel.walkable = surfel.gateColor
+    ? hueMatchesGate(E, gateRGB)                 // 색 게이트: 밝기 + 채도 + 색조
+    : luminance(E) >= WALK_ON;                   // 일반 바닥: 밝기 임계값
+}
+
+// ④ 연속 위치 판정 — 발밑(x,z)에서 4개 surfel을 bilinear 보간 (그리드에 안 묶인 자유 이동)
+function sampleIrradianceAt(level, x, z) { /* 4-surfel bilinear → luminance */ }
+```
+
 ![서펠 디버그](public/report-captures/06_surfel_debug.png)
 *그림 2. 표면에 분포한 surfel 캐시(디버그 뷰). 각 점이 그 지점으로 들어온 빛을 저장한다 — GIBS의 surface lighting cache 개념.*
 
