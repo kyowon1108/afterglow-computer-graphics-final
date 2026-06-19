@@ -2,6 +2,7 @@
 
 > 1인칭 3D 라이트 퍼즐. **표면에서 튕기고·꺾이고·섞인 간접광(CPU SurfelGI 근사)이 충분히 닿은 바닥만 밟을 수 있다.** GI는 시각 효과가 아니라 게임 규칙 그 자체다.
 > 제작: 이교원 · 게임 링크: https://kyowon1108.github.io/afterglow-computer-graphics-final/ · 코드: https://github.com/kyowon1108/afterglow-computer-graphics-final
+> 📄 슬라이드 PDF 버전: [AFTERGLOW-report.pdf](./AFTERGLOW-report.pdf)
 
 ---
 
@@ -28,6 +29,9 @@
 - **승리 조건:** 출구 칸 도달 + 모든 게이트 개방 + 손에 든 블록 없음 + 바닥에 서 있음.
 - **실패:** 어두운(빛이 부족한) 바닥을 밟으면 떨어져 시작점으로 즉시 리스폰. 목숨·타이머 없음(무한 재시도).
 - **조작:** 이동 WASD · 시점 마우스 · 집기·놓기 E/클릭 · 회전 휠·`[ ]` · 색 Q · 되돌리기 Z · 다시하기 R · GI 비교 G · 패스 보기 B · 위에서 보기 M · 3인칭 T · 디버그 F1·V·N · 도움말 ?.
+
+![게임 플레이 예시](public/report-captures/03_l1_aim_after.png)
+*그림 1b. 실제 플레이 화면 — 블록을 소켓에 놓고 빛을 조준해 1단계의 길을 켠 모습.*
 
 ---
 
@@ -108,6 +112,29 @@ function sampleIrradianceAt(level, x, z) { /* 4-surfel bilinear → luminance */
 *그림 5. 2단계. "GI를 끄면 예쁜 효과가 사라지는 게 아니라 길 자체가 사라진다" — 이 게임의 핵심 주장.*
 
 > **정직성:** 본 구현은 **CPU SurfelGI 근사**다. DDGI도, 물리적으로 정확한 SurfelGI 렌더러도 아니다. 거울은 specular 반사가 아니라 **방향성 diffuse relay**이며, `MIRROR_GAIN`은 게임 튜닝값이다(에너지 보존은 radiosity 바운스 패스에 한정).
+
+### 5.3 강의 SurfelGI(GPU) vs 본 구현(CPU 근사) — 무엇을, 왜 이렇게 진행했는가
+
+강의 L8 SurfelGI의 **핵심 개념**(표면에 박은 surfel을 빛 캐시로 두고, 직접광 + 이웃 surfel의 간접광을 재사용)은 그대로 가져왔다. 다만 우리는 GI를 *화면 렌더링*이 아니라 **게임 규칙(`walkable`·색 게이트)** 으로 쓰기 때문에, GPU 레이트레이싱 대신 **CPU 해석적 라디오시티**로 구현했다.
+
+| 항목 | 강의 SurfelGI / GPU 충실구현(EA GIBS, webgiya) | 본 구현 (CPU 근사) |
+|---|---|---|
+| surfel = 표면 광 캐시 | ✅ | ✅ (바닥·벽·거울 타일) |
+| 빛 수집 | 반구 **레이트레이싱**(three-mesh-bvh, importance sampling) | **해석적**: cos·1/d²·가림·조준 원뿔 + form-factor |
+| 간접광/바운스 | 무한 재귀 + **temporal 누적**(MSME 등) | **2-bounce form factor** + 에너지 클램프(결정적) |
+| 저장 | 구면조화(SH) | RGB irradiance |
+| 연산/판정 | **GPU**, 다프레임 수렴(노이즈 제거) | **CPU**, 즉시·결정적, **Node headless 검증** |
+| 광원 | 정적 지오메트리 + **단일 directional**, *emissive 없음* | **다수의 동적 발광 블록** + 회전 거울·프리즘 |
+| 산출물 | 픽셀 셰이딩(시각) | `walkable`·게이트·레벨 검증(**게임 규칙**) |
+
+**왜 CPU 근사를 택했나**
+1. 우리 게임에서 GI 결과는 "예쁜 조명"이 아니라 **밟을 수 있는 바닥/게이트 개방을 정하는 규칙**이다. 따라서 **즉시·결정적·headless 검증 가능**해야 한다. GPU temporal GI는 다프레임 수렴·async readback·드라이버 차이가 들어가 규칙의 진실원으로 쓸 수 없다.
+2. 우리 핵심 메커닉은 **다수의 동적 발광 블록 + 이동/회전하는 거울·프리즘**이다. 충실한 GPU 구현(webgiya)은 본문에서 **정적 지오메트리·단일 directional 광·emissive 미지원**을 한계로 명시하므로, 우리 설계와 정면으로 충돌한다.
+3. 그래서 EA GIBS의 **surfel 개념은 채택**하되, 실시간 게임 규칙 검증을 위해 **결정적 CPU 라디오시티로 근사**했다. 누수(leak)는 GPU 구현이 radial-depth atlas로 푸는 문제를, 우리는 **2D segment 가시성 검사**로 동일 목적 달성.
+
+**검증:** `npm run validate:levels`가 모든 레벨에서 (a) 정확 출구+전 게이트 개방이라야 클리어, (b) **의도 외 클리어(치즈)가 0개**, (c) carried 빛으로는 길/게이트 불가까지 단언한다. 즉 "근사"이지만 **게임 규칙으로서는 정확하고 견고**하다.
+
+> 참고: EA SEED, *Global Illumination Based on Surfels (GIBS)*, SIGGRAPH 2021 / Jure Triglav, *Surfel-based GI on the web*(WebGPU 충실 구현, 본인도 "biased real-time approximation"이며 emissive·동적 장면 미지원이라 명시).
 
 ---
 
