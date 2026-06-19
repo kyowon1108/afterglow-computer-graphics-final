@@ -1,0 +1,203 @@
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #080b0d;
+  color: #f5f1e8;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#gameCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+button {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: #f5f1e8;
+  color: #101417;
+  cursor: pointer;
+  font: 700 14px/1 system-ui, sans-serif;
+  padding: 12px 18px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 230, 163, 0.12), rgba(8, 11, 13, 0.92) 52%, #050607 100%);
+}
+
+.titlePanel,
+.modalPanel {
+  max-width: 680px;
+  padding: 40px;
+  text-align: center;
+}
+
+.titlePanel h1 {
+  margin: 0;
+  letter-spacing: 0.12em;
+  font-size: clamp(48px, 8vw, 96px);
+  line-height: 0.9;
+}
+
+.titlePanel p,
+.modalPanel p {
+  color: #c9d0ce;
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.titleGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 24px 0;
+  color: #dfe7e4;
+}
+
+.titleGrid span,
+.hudStatus span,
+.debugPanel {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(11, 15, 17, 0.7);
+  padding: 8px 10px;
+}
+
+.hud {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+}
+
+.hudTop {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.hudObjective {
+  position: absolute;
+  top: 54px;
+  left: 20px;
+  max-width: 420px;
+  color: #dfe7e4;
+  font-size: 14px;
+}
+
+.hudStatus {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 520px;
+  font-size: 12px;
+}
+
+.hudControls {
+  position: absolute;
+  left: 20px;
+  bottom: 18px;
+  color: #b8c0bd;
+  font-size: 12px;
+}
+
+.crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(245, 241, 232, 0.86);
+  border-radius: 999px;
+  box-shadow: 0 0 14px rgba(255, 230, 163, 0.24);
+}
+
+.crosshair::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.crosshair--void {
+  border-color: rgba(255, 90, 70, 0.78);
+  color: rgba(255, 90, 70, 0.9);
+}
+
+.crosshair--solid {
+  border-color: rgba(255, 230, 163, 0.9);
+  color: rgba(255, 230, 163, 0.95);
+}
+
+.crosshair--target {
+  border-color: rgba(108, 255, 195, 0.95);
+  color: rgba(108, 255, 195, 1);
+  box-shadow: 0 0 18px rgba(108, 255, 195, 0.45);
+}
+
+.respawnFade {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: #05080a;
+  opacity: 0;
+  transition: opacity 350ms ease;
+}
+
+.respawnFade--active {
+  opacity: 0.82;
+  transition-duration: 80ms;
+}
+
+.debugPanel {
+  position: absolute;
+  right: 20px;
+  bottom: 18px;
+  min-width: 230px;
+  white-space: pre-line;
+  color: #dfe7e4;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (max-width: 720px) {
+  .titleGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hudStatus {
+    left: 20px;
+    right: 20px;
+    top: auto;
+    bottom: 52px;
+    justify-content: flex-start;
+  }
+}

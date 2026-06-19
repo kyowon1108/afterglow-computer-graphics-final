@@ -1,0 +1,23 @@
+{
+  "name": "afterglow",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "fetch-assets": "node scripts/fetch-assets.mjs",
+    "capture:report": "node scripts/capture-report.mjs",
+    "smoke:interactions": "node scripts/smoke-interactions.mjs",
+    "validate:levels": "node scripts/validate-levels.mjs",
+    "build": "npm run validate:levels && vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "gsap": "^3.12.5",
+    "three": "^0.184.0",
+    "vite": "^8.0.8"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.0"
+  }
+}
