@@ -7,11 +7,14 @@ import { buildRoom } from "./room.js";
 import { EmissiveBlockView } from "../entities/EmissiveBlock.js";
 import { ExitPortal } from "../entities/ExitPortal.js";
 import { createLightPool } from "../gi/applyGI.js";
+import { addUv2 } from "./geometry.js";
+import { cloneMaterialWithRepeat } from "./materials.js";
 
 function addInteriorWalls(group, level, materials) {
-  const geom = new THREE.BoxGeometry(TILE_SIZE, WALL_HEIGHT, TILE_SIZE);
+  const geom = addUv2(new THREE.BoxGeometry(TILE_SIZE, WALL_HEIGHT, TILE_SIZE));
+  const material = cloneMaterialWithRepeat(materials.wall, 1, WALL_HEIGHT / TILE_SIZE);
   for (const cell of level.interiorWalls) {
-    const mesh = new THREE.Mesh(geom, materials.wall);
+    const mesh = new THREE.Mesh(geom, material.clone());
     const pos = cellToWorld(cell, level, WALL_HEIGHT / 2);
     mesh.position.set(pos.x, pos.y, pos.z);
     group.add(mesh);
@@ -19,7 +22,7 @@ function addInteriorWalls(group, level, materials) {
 }
 
 function addSockets(group, level, materials) {
-  const geom = new THREE.CylinderGeometry(0.38, 0.38, 0.035, 32);
+  const geom = addUv2(new THREE.CylinderGeometry(0.38, 0.38, 0.035, 32));
   const hitGeom = new THREE.BoxGeometry(TILE_SIZE * 0.82, 1.1, TILE_SIZE * 0.82);
   const hitMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0, depthWrite: false });
   const socketMeshes = [];
@@ -40,10 +43,10 @@ function addSockets(group, level, materials) {
 }
 
 function addBouncePanels(group, level, materials) {
-  const geom = new THREE.BoxGeometry(TILE_SIZE * 0.86, 1.05, 0.08);
+  const geom = addUv2(new THREE.BoxGeometry(TILE_SIZE * 0.86, 1.05, 0.08));
   for (const panel of level.bouncePanels) {
     for (const cell of panel.cells) {
-      const mesh = new THREE.Mesh(geom, materials.bounce.clone());
+      const mesh = new THREE.Mesh(geom, cloneMaterialWithRepeat(materials.bounce, 1, 1));
       const pos = cellToWorld(cell, level, 0.72);
       mesh.position.set(pos.x, pos.y, pos.z);
       if (panel.normal === "+x" || panel.normal === "-x") mesh.rotation.y = Math.PI / 2;
@@ -67,6 +70,7 @@ export function buildLevel(levelDef, scene, materials) {
     const tile = createTileMesh(surfel, materials);
     tileBySurfel.set(surfel.id, tile);
     group.add(tile.mesh, tile.edge);
+    if (tile.icon) group.add(tile.icon);
   }
   const socketMeshes = addSockets(group, level, materials);
 

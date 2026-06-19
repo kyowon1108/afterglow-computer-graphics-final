@@ -34,7 +34,7 @@ export function initRenderer(canvas) {
     const size = new THREE.Vector2(window.innerWidth, window.innerHeight);
     composer = new EffectComposer(renderer);
     renderPass = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(size, 0.3, 0.35, 1.45);
+    const bloomPass = new UnrealBloomPass(size, 0.6, 0.4, 0.9);
     outlinePass = new OutlinePass(size, scene, camera);
     outlinePass.edgeStrength = 3.0;
     outlinePass.edgeGlow = 0.35;

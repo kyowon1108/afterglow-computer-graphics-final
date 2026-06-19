@@ -1,7 +1,15 @@
 import { buildGrid } from "../world/floorGrid.js";
 import { buildWalls } from "../world/walls.js";
-import { deepClone, isAdjacent, sameCell } from "../core/math.js";
+import { cellKey, deepClone, isAdjacent, sameCell } from "../core/math.js";
 import { solve } from "../gi/SurfelSolver.js";
+
+function makeBlockedPanelCells(levelDef) {
+  const blocked = new Set();
+  for (const panel of levelDef.bouncePanels ?? []) {
+    for (const cell of panel.cells ?? []) blocked.add(cellKey(cell));
+  }
+  return blocked;
+}
 
 export function createLevelState(levelDef) {
   const def = deepClone(levelDef);
@@ -14,6 +22,7 @@ export function createLevelState(levelDef) {
     walls: wallData.walls,
     wallSurfels: wallData.wallSurfels,
     surfels: [...grid.surfels, ...wallData.wallSurfels],
+    blockedPanelCells: makeBlockedPanelCells(def),
     blocks,
     playerCell: { ...def.start },
     mode: "GI",
@@ -21,6 +30,15 @@ export function createLevelState(levelDef) {
   };
   solve(level, "GI");
   return level;
+}
+
+export function isPanelBlockedCell(level, cell) {
+  return level.blockedPanelCells?.has(cellKey(cell)) ?? false;
+}
+
+export function isPlayerNavigableCell(level, cell) {
+  const tile = level.grid.tileAt(cell);
+  return !!tile?.walkable && !isPanelBlockedCell(level, cell);
 }
 
 export function resetBlocksToPickup(level) {
@@ -54,9 +72,9 @@ export function applyExpectedSolution(level) {
 export function pathExists(level, from = level.start, to = level.exit) {
   const start = level.grid.tileAt(from);
   const end = level.grid.tileAt(to);
-  if (!start || !end) return false;
+  if (!start || !end || isPanelBlockedCell(level, from)) return false;
   const queue = [from];
-  const seen = new Set([`${from.x},${from.z}`]);
+  const seen = new Set([cellKey(from)]);
   const dirs = [
     { x: 1, z: 0 },
     { x: -1, z: 0 },
@@ -68,10 +86,9 @@ export function pathExists(level, from = level.start, to = level.exit) {
     if (sameCell(cell, to) || (end.alwaysSolid && Math.max(Math.abs(cell.x - to.x), Math.abs(cell.z - to.z)) <= 1)) return true;
     for (const dir of dirs) {
       const next = { x: cell.x + dir.x, z: cell.z + dir.z };
-      const key = `${next.x},${next.z}`;
+      const key = cellKey(next);
       if (seen.has(key)) continue;
-      const tile = level.grid.tileAt(next);
-      if (!tile || !tile.walkable) continue;
+      if (!isPlayerNavigableCell(level, next)) continue;
       seen.add(key);
       queue.push(next);
     }
@@ -88,7 +105,7 @@ export function checkPlayer(level, playerCell) {
   const reachedExit = sameCell(playerCell, level.exit) || Math.max(Math.abs(playerCell.x - level.exit.x), Math.abs(playerCell.z - level.exit.z)) <= 1;
   return {
     tile,
-    walkable: !!tile?.walkable,
+    walkable: isPlayerNavigableCell(level, playerCell),
     reachedExit,
     luminance: tile ? tile.irradiance : { r: 0, g: 0, b: 0 }
   };

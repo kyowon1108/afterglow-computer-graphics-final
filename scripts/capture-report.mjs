@@ -2,11 +2,13 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
+import { TILE_SIZE } from "../src/core/constants.js";
 
 const PORT = Number(process.env.AFTERGLOW_CAPTURE_PORT ?? 5178);
 const APP_URL = process.env.AFTERGLOW_CAPTURE_URL ?? `http://127.0.0.1:${PORT}/?qa=1`;
 const OUT_DIR = new URL("../public/report-captures/", import.meta.url);
 const VIEWPORT = { width: 1280, height: 720 };
+const CENTER_EPSILON = TILE_SIZE * 0.16;
 
 const shots = [
   "01_title",
@@ -90,10 +92,12 @@ async function moveAxis(page, axis, target, label) {
   while (Date.now() - started < 20000) {
     const state = await snap(page);
     if (state.appState !== "GAME") return;
-    const value = state.player.cell[axis];
-    if (value === target) return;
-    if (axis === "x") await pulse(page, value < target ? "KeyW" : "KeyS");
-    else await pulse(page, value < target ? "KeyD" : "KeyA");
+    const center = (target - state.level[axis === "x" ? "width" : "height"] / 2) * TILE_SIZE;
+    const position = state.player.position[axis];
+    const delta = center - position;
+    if (state.player.cell[axis] === target && Math.abs(delta) <= CENTER_EPSILON) return;
+    const key = axis === "x" ? (delta > 0 ? "KeyW" : "KeyS") : delta > 0 ? "KeyD" : "KeyA";
+    await pulse(page, key, Math.abs(delta) < TILE_SIZE * 0.35 ? 70 : 130);
   }
   throw new Error(`${label}: timed out at ${JSON.stringify((await snap(page)).player)}`);
 }
@@ -171,6 +175,7 @@ async function main() {
     await page.waitForFunction(() => window.__AFTERGLOW_QA__.snapshot().level.mode === "BOUNCE2");
     await shot(page, "09_bounce_pass_2");
     await page.keyboard.press("KeyB");
+    await moveTo(page, 7, 3, "L3 panel bypass");
     await moveTo(page, 9, 3, "L3 exit");
     await continueLevel(page, "Level 3 cleared");
 

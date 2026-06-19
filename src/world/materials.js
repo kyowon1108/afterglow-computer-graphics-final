@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { PALETTE } from "../core/constants.js";
 
+const TEXTURE_MAP_KEYS = ["map", "normalMap", "roughnessMap", "aoMap"];
+
 function textureParams(set) {
   if (!set) return {};
   return {
@@ -9,6 +11,22 @@ function textureParams(set) {
     roughnessMap: set.roughness ?? null,
     aoMap: set.ao ?? null
   };
+}
+
+function cloneTextureWithRepeat(texture, repeatX, repeatY) {
+  if (!texture) return null;
+  const clone = texture.clone();
+  clone.repeat.set(Math.max(1, repeatX), Math.max(1, repeatY));
+  clone.needsUpdate = true;
+  return clone;
+}
+
+export function cloneMaterialWithRepeat(material, repeatX = 1, repeatY = 1) {
+  const clone = material.clone();
+  for (const key of TEXTURE_MAP_KEYS) {
+    if (clone[key]) clone[key] = cloneTextureWithRepeat(clone[key], repeatX, repeatY);
+  }
+  return clone;
 }
 
 export function makeMaterials(textureSets = {}) {

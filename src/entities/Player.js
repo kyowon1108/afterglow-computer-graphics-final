@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { cellBounds, cellToWorld, worldToCell } from "../core/math.js";
+import { cellBounds, cellKey, cellToWorld, worldToCell } from "../core/math.js";
 import { createGroundContact, GroundState, updateGroundContact } from "../gi/sampleField.js";
 
 const PLAYER_RADIUS = 0.35;
@@ -11,12 +11,18 @@ const GRAVITY = 30;
 const MAX_STEP_SECONDS = 0.05;
 const SUBSTEPS = 5;
 const ROBOT_SCALE = 0.25;
+const RESPAWN_Y = -3;
 
 function makeCollisionBoxes(level) {
   const boxes = [];
+  const panelCells = new Set();
+  for (const panel of level.bouncePanels ?? []) {
+    for (const cell of panel.cells ?? []) panelCells.add(cellKey(cell));
+  }
   for (let z = 0; z < level.height; z++) {
     for (let x = 0; x < level.width; x++) {
-      if (level.grid.tileAt({ x, z })) continue;
+      const cell = { x, z };
+      if (level.grid.tileAt(cell) && !panelCells.has(cellKey(cell))) continue;
       boxes.push(cellBounds({ x, z }, level));
     }
   }
@@ -212,7 +218,7 @@ export class Player {
       this.position.z += this.velocity.z * stepDt;
       this.pushOutOfWalls();
 
-      if (this.position.y <= -25) this.respawn(level);
+      if (this.position.y <= RESPAWN_Y) this.respawn(level);
     }
 
     this.deriveCell(level);

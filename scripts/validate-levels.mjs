@@ -1,9 +1,9 @@
 import { LEVELS } from "../src/game/levels.js";
-import { applyExpectedSolution, createLevelState, noStrandingDuringSolution, pathExists, placeBlockOnSocket, resetBlocksToPickup } from "../src/game/rules.js";
+import { applyExpectedSolution, createLevelState, isPlayerNavigableCell, noStrandingDuringSolution, pathExists, placeBlockOnSocket, resetBlocksToPickup } from "../src/game/rules.js";
 import { solve } from "../src/gi/SurfelSolver.js";
 import { sampleIrradianceAt } from "../src/gi/sampleField.js";
 import { WALK_OFF, WALK_ON } from "../src/core/constants.js";
-import { cellToWorld, isAdjacent, sameCell } from "../src/core/math.js";
+import { cellKey, cellToWorld, isAdjacent, sameCell } from "../src/core/math.js";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -21,7 +21,7 @@ function assertSample(level, cell, predicate, message) {
 
 function findWalkablePath(level, from = level.start, to = level.exit) {
   const queue = [{ cell: from, path: [from] }];
-  const seen = new Set([`${from.x},${from.z}`]);
+  const seen = new Set([cellKey(from)]);
   const dirs = [
     { x: 1, z: 0 },
     { x: -1, z: 0 },
@@ -33,10 +33,9 @@ function findWalkablePath(level, from = level.start, to = level.exit) {
     if (sameCell(cell, to) || Math.max(Math.abs(cell.x - to.x), Math.abs(cell.z - to.z)) <= 1) return path;
     for (const dir of dirs) {
       const next = { x: cell.x + dir.x, z: cell.z + dir.z };
-      const key = `${next.x},${next.z}`;
+      const key = cellKey(next);
       if (seen.has(key)) continue;
-      const tile = level.grid.tileAt(next);
-      if (!tile || !tile.walkable) continue;
+      if (!isPlayerNavigableCell(level, next)) continue;
       seen.add(key);
       queue.push({ cell: next, path: [...path, next] });
     }
@@ -47,6 +46,9 @@ function findWalkablePath(level, from = level.start, to = level.exit) {
 function assertContinuousPath(level) {
   const path = findWalkablePath(level);
   assert(path, `L${level.id}: no walkable path for continuous sampling`);
+  for (const cell of path) {
+    assert(isPlayerNavigableCell(level, cell), `L${level.id}: validation path crosses blocked panel cell ${cell.x},${cell.z}`);
+  }
   for (let i = 1; i < path.length; i++) {
     const a = cellToWorld(path[i - 1], level, 0);
     const b = cellToWorld(path[i], level, 0);

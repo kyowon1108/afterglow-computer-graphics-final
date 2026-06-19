@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 import { chromium } from "playwright";
+import { TILE_SIZE } from "../src/core/constants.js";
 
 const PORT = Number(process.env.AFTERGLOW_SMOKE_PORT ?? 5180);
 const APP_URL = process.env.AFTERGLOW_SMOKE_URL ?? `http://127.0.0.1:${PORT}/?qa=1`;
 const VIEWPORT = { width: 1280, height: 720 };
+const CENTER_EPSILON = TILE_SIZE * 0.16;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -60,10 +62,12 @@ async function moveAxis(page, axis, target, label) {
   const started = Date.now();
   while (Date.now() - started < 20000) {
     const state = await snap(page);
-    const value = state.player.cell[axis];
-    if (value === target) return state;
-    if (axis === "x") await pulse(page, value < target ? "KeyW" : "KeyS");
-    else await pulse(page, value < target ? "KeyD" : "KeyA");
+    const center = (target - state.level[axis === "x" ? "width" : "height"] / 2) * TILE_SIZE;
+    const position = state.player.position[axis];
+    const delta = center - position;
+    if (state.player.cell[axis] === target && Math.abs(delta) <= CENTER_EPSILON) return state;
+    const key = axis === "x" ? (delta > 0 ? "KeyW" : "KeyS") : delta > 0 ? "KeyD" : "KeyA";
+    await pulse(page, key, Math.abs(delta) < TILE_SIZE * 0.35 ? 70 : 130);
   }
   throw new Error(`${label}: move timed out at ${JSON.stringify((await snap(page)).player)}`);
 }
