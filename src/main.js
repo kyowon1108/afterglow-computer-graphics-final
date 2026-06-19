@@ -159,11 +159,13 @@ function startGame() {
 }
 
 function completeLevel() {
+  cameraRig.unlock();
   setState(AppState.LEVEL_COMPLETE);
   showLevelComplete(overlays, current.level);
 }
 
 function completeGame() {
+  cameraRig.unlock();
   setState(AppState.GAME_COMPLETE);
   showGameComplete(overlays);
 }
@@ -546,7 +548,7 @@ function update(dtMs) {
   debugView.group.visible = debugVisible || debugView.showSurfels || debugView.showNormals;
   debugView.draw(current.level);
   const status = checkPlayer(current.level, player.cell);
-  if (status.reachedExit && !player.heldBlockId && getState() === AppState.GAME) {
+  if (status.reachedExit && status.walkable && player.position.y >= -0.05 && !player.heldBlockId && getState() === AppState.GAME) {
     if (levelIndex === LEVELS.length - 1) completeGame();
     else completeLevel();
   }

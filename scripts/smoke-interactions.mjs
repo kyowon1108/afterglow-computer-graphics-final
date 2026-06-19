@@ -74,6 +74,24 @@ async function moveTo(page, x, z, label) {
   await page.waitForTimeout(250);
 }
 
+async function completeL1(page) {
+  await page.keyboard.press("KeyE");
+  await waitFor(page, (state) => state.player.heldBlockId === "b1", "L1 completion picks block");
+  await moveTo(page, 3, 1, "L1 completion socket");
+  await page.keyboard.press("KeyE");
+  await waitFor(
+    page,
+    (state) => state.player.heldBlockId === null && state.level.blocks.find((block) => block.id === "b1")?.state === "placed",
+    "L1 completion places block"
+  );
+  await moveTo(page, 6, 1, "L1 completion exit");
+  return waitFor(
+    page,
+    (state) => state.appState === "LEVEL_COMPLETE" && state.modalTitle === "Level 1 cleared" && state.camera.isLocked === false,
+    "level complete releases pointer lock"
+  );
+}
+
 async function clickCanvas(page) {
   const box = await page.locator("#gameCanvas").boundingBox();
   if (!box) throw new Error("gameCanvas has no bounding box");
@@ -172,8 +190,10 @@ async function main() {
       6000
     );
 
+    await completeL1(page);
+
     if (errors.length) throw new Error(`Browser errors during smoke: ${errors.join(" | ")}`);
-    console.log("PASS interaction smoke: mouse/E pick-place, ghost, undo, color, reset, GI/B, cameras, fall/respawn");
+    console.log("PASS interaction smoke: mouse/E pick-place, ghost, undo, color, reset, GI/B, cameras, fall/respawn, level-end pointer unlock");
   } finally {
     await browser.close();
     server?.kill("SIGTERM");
