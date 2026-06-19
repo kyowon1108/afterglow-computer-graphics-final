@@ -1,35 +1,77 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { TILE_SIZE } from "../src/core/constants.js";
 
 const PORT = Number(process.env.AFTERGLOW_CAPTURE_PORT ?? 5178);
-const APP_URL = process.env.AFTERGLOW_CAPTURE_URL ?? `http://127.0.0.1:${PORT}/?qa=1`;
-const OUT_DIR = new URL("../public/report-captures/", import.meta.url);
+const APP_URL = process.env.AFTERGLOW_CAPTURE_URL ?? `http://127.0.0.1:${PORT}/?qa=1&capture=1`;
+const ROOT_URL = new URL("/", APP_URL).toString();
+const OUT_DIR_URL = new URL("../public/report-captures/", import.meta.url);
+const OUT_DIR = fileURLToPath(OUT_DIR_URL);
 const VIEWPORT = { width: 1280, height: 720 };
-const CENTER_EPSILON = TILE_SIZE * 0.16;
 
-const shots = [
+const SHOTS = [
   "01_title",
-  "02_l1_direct_before",
-  "03_l1_direct_after",
-  "04_l2_direct_only_fail",
-  "05_l2_gi_bounce_success",
-  "06_surfel_debug_points",
-  "07_bounce_pass_direct",
-  "08_bounce_pass_1",
-  "09_bounce_pass_2",
+  "02_l1_aim_before",
+  "03_l1_aim_after",
+  "04_l2_direct_only",
+  "05_l2_gi_on",
+  "06_surfel_debug",
+  "07_bounce_direct",
+  "08_bounce_pass1",
+  "09_bounce_pass2",
   "10_color_mixing",
   "11_color_gate_locked",
   "12_color_gate_open",
   "13_robot_animation",
-  "14_uv_normalmap_closeup",
+  "14_texture_uv_normal",
   "15_game_complete"
 ];
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function round3(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function cameraSignature(snapshot) {
+  const camera = snapshot.camera;
+  return {
+    mode: camera.mode,
+    yaw: round3(camera.yaw),
+    pitch: round3(camera.pitch),
+    position: {
+      x: round3(camera.position.x),
+      y: round3(camera.position.y),
+      z: round3(camera.position.z)
+    }
+  };
+}
+
+function configSignature(snapshot) {
+  return {
+    levelIndex: snapshot.levelIndex,
+    blocks: snapshot.level.blocks.map((block) => ({
+      id: block.id,
+      state: block.state,
+      colorKey: block.colorKey,
+      emitDir: block.emitDir,
+      cell: block.cell
+    })),
+    mirrors: snapshot.level.mirrors.map((mirror) => ({
+      id: mirror.id,
+      normalYaw: mirror.normalYaw
+    }))
+  };
+}
+
+function assertSameJson(a, b, label) {
+  const left = JSON.stringify(a);
+  const right = JSON.stringify(b);
+  if (left !== right) throw new Error(`${label} changed:\n${left}\n${right}`);
 }
 
 async function waitForServer(url, timeoutMs = 20000) {
@@ -54,76 +96,116 @@ async function startServer() {
   });
   child.stdout.on("data", () => {});
   child.stderr.on("data", () => {});
-  await waitForServer(APP_URL.replace("/?qa=1", "/"));
+  await waitForServer(ROOT_URL);
   return child;
 }
 
-async function shot(page, name) {
-  if (!shots.includes(name)) throw new Error(`Unknown shot ${name}`);
-  await page.waitForTimeout(350);
-  await page.screenshot({ path: path.join(OUT_DIR.pathname, `${name}.png`) });
-  console.log(`captured ${name}.png`);
+async function clearOldCaptures() {
+  await fs.mkdir(OUT_DIR, { recursive: true });
+  const entries = await fs.readdir(OUT_DIR, { withFileTypes: true });
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".png"))
+      .map((entry) => fs.unlink(path.join(OUT_DIR, entry.name)))
+  );
+}
+
+async function waitFonts(page) {
+  await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
+}
+
+async function waitQa(page) {
+  await page.waitForFunction(() => !!window.__AFTERGLOW_QA__?.snapshot, null, { timeout: 10000 });
 }
 
 async function snap(page) {
   return page.evaluate(() => window.__AFTERGLOW_QA__.snapshot());
 }
 
-async function pulse(page, key, ms = 150) {
-  await page.keyboard.down(key);
-  await page.waitForTimeout(ms);
-  await page.keyboard.up(key);
-  await page.waitForTimeout(80);
+async function qa(page, method, ...args) {
+  return page.evaluate(
+    ({ method: qaMethod, args: qaArgs }) => {
+      const api = window.__AFTERGLOW_QA__;
+      if (!api?.[qaMethod]) throw new Error(`Missing QA hook ${qaMethod}`);
+      return api[qaMethod](...qaArgs);
+    },
+    { method, args }
+  );
 }
 
-async function waitGame(page) {
-  await page.waitForFunction(() => window.__AFTERGLOW_QA__?.snapshot().appState === "GAME", null, { timeout: 5000 });
-  await page.waitForTimeout(250);
+async function setReportLabel(page, text = "") {
+  await page.evaluate((label) => {
+    let el = document.getElementById("reportLabel");
+    if (!label) {
+      el?.remove();
+      return;
+    }
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "reportLabel";
+      document.body.append(el);
+    }
+    el.textContent = label;
+  }, text);
 }
 
-async function pressE(page, predicate, timeout = 5000) {
-  await page.keyboard.press("KeyE");
-  await page.waitForFunction(predicate, null, { timeout });
-  await page.waitForTimeout(150);
+async function addReportStyles(page) {
+  await page.addStyleTag({
+    content: `
+      #reportLabel {
+        position: fixed;
+        left: 24px;
+        top: 92px;
+        z-index: 20;
+        max-width: 560px;
+        border: 1px solid rgba(255, 230, 163, 0.35);
+        border-radius: 8px;
+        background: rgba(5, 8, 10, 0.78);
+        color: #fff7c7;
+        padding: 10px 12px;
+        font: 800 14px/1.45 Inter, system-ui, sans-serif;
+        white-space: pre-line;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.55);
+      }
+    `
+  });
 }
 
-async function moveAxis(page, axis, target, label) {
-  const started = Date.now();
-  while (Date.now() - started < 20000) {
-    const state = await snap(page);
-    if (state.appState !== "GAME") return;
-    const center = (target - state.level[axis === "x" ? "width" : "height"] / 2) * TILE_SIZE;
-    const position = state.player.position[axis];
-    const delta = center - position;
-    if (state.player.cell[axis] === target && Math.abs(delta) <= CENTER_EPSILON) return;
-    const key = axis === "x" ? (delta > 0 ? "KeyW" : "KeyS") : delta > 0 ? "KeyD" : "KeyA";
-    await pulse(page, key, Math.abs(delta) < TILE_SIZE * 0.35 ? 70 : 130);
-  }
-  throw new Error(`${label}: timed out at ${JSON.stringify((await snap(page)).player)}`);
+async function capture(page, name, { settle = true, label = "" } = {}) {
+  if (!SHOTS.includes(name)) throw new Error(`Unknown shot ${name}`);
+  await setReportLabel(page, label);
+  if (settle) await qa(page, "settle");
+  await waitFonts(page);
+  await page.waitForTimeout(180);
+  await page.screenshot({
+    path: path.join(OUT_DIR, `${name}.png`),
+    fullPage: false
+  });
+  console.log(`captured ${name}.png`);
+  return snap(page);
 }
 
-async function moveTo(page, x, z, label, order = "xz") {
-  if (order === "zx") {
-    await moveAxis(page, "z", z, label);
-    await moveAxis(page, "x", x, label);
-  } else {
-    await moveAxis(page, "x", x, label);
-    await moveAxis(page, "z", z, label);
-  }
-  await page.waitForTimeout(250);
+async function startGame(page) {
+  await page.click("#startButton");
+  await waitQa(page);
+  await page.waitForFunction(() => window.__AFTERGLOW_QA__.snapshot().appState === "GAME", null, { timeout: 5000 });
 }
 
-async function continueLevel(page, title) {
-  await page.waitForFunction((expected) => window.__AFTERGLOW_QA__?.snapshot().modalTitle === expected, title, { timeout: 8000 });
-  await page.click("#overlayButton");
-  await waitGame(page);
+async function loadSolvedPeek(page, index) {
+  await qa(page, "loadLevel", index);
+  await qa(page, "applySolution");
+  await qa(page, "setCameraPeek");
+  await qa(page, "settle");
 }
 
 async function main() {
-  await fs.mkdir(OUT_DIR, { recursive: true });
+  await clearOldCaptures();
   const server = await startServer();
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: VIEWPORT });
+  const page = await browser.newPage({
+    viewport: VIEWPORT,
+    deviceScaleFactor: 2
+  });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
@@ -132,86 +214,91 @@ async function main() {
 
   try {
     await page.goto(APP_URL, { waitUntil: "domcontentloaded" });
-    await shot(page, "01_title");
-    await page.click("#startButton");
-    await waitGame(page);
-    await shot(page, "02_l1_direct_before");
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === "b1");
-    await shot(page, "14_uv_normalmap_closeup");
-    await moveTo(page, 3, 1, "L1 socket");
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === null && window.__AFTERGLOW_QA__.snapshot().level.blocks[0].state === "placed");
-    await shot(page, "03_l1_direct_after");
-    await moveTo(page, 6, 1, "L1 exit");
-    await continueLevel(page, "Level 1 cleared");
+    await waitFonts(page);
+    await addReportStyles(page);
 
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === "b1");
-    await moveTo(page, 4, 1, "L2 socket");
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === null && window.__AFTERGLOW_QA__.snapshot().level.blocks[0].state === "placed");
-    await page.keyboard.press("KeyG");
-    await page.waitForFunction(() => window.__AFTERGLOW_QA__.snapshot().level.mode === "DIRECT_ONLY");
-    await shot(page, "04_l2_direct_only_fail");
-    await page.keyboard.press("KeyG");
-    await page.waitForFunction(() => window.__AFTERGLOW_QA__.snapshot().level.mode === "GI");
-    await shot(page, "05_l2_gi_bounce_success");
-    await page.keyboard.press("F1");
-    await page.keyboard.press("KeyV");
-    await shot(page, "06_surfel_debug_points");
-    await page.keyboard.press("F1");
-    await page.keyboard.press("KeyV");
-    await moveTo(page, 5, 4, "L2 south");
-    await moveTo(page, 1, 4, "L2 exit");
-    await continueLevel(page, "Level 2 cleared");
+    await capture(page, "01_title", { settle: false });
+    await startGame(page);
 
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === "b1");
-    await moveTo(page, 3, 1, "L3 socket");
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === null && window.__AFTERGLOW_QA__.snapshot().level.blocks[0].state === "placed");
-    await page.keyboard.press("KeyB");
-    await page.waitForFunction(() => window.__AFTERGLOW_QA__.snapshot().level.mode === "DIRECT_ONLY");
-    await shot(page, "07_bounce_pass_direct");
-    await page.keyboard.press("KeyB");
-    await page.waitForFunction(() => window.__AFTERGLOW_QA__.snapshot().level.mode === "BOUNCE1");
-    await shot(page, "08_bounce_pass_1");
-    await page.keyboard.press("KeyB");
-    await page.waitForFunction(() => window.__AFTERGLOW_QA__.snapshot().level.mode === "BOUNCE2");
-    await shot(page, "09_bounce_pass_2");
-    await page.keyboard.press("KeyB");
-    await moveTo(page, 7, 3, "L3 panel bypass");
-    await moveTo(page, 9, 3, "L3 exit");
-    await continueLevel(page, "Level 3 cleared");
+    await qa(page, "setCameraPeek");
+    await qa(page, "setBounceView", "FINAL");
+    await capture(page, "02_l1_aim_before");
 
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === "b1");
-    await moveTo(page, 3, 1, "L4 s1");
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === null && window.__AFTERGLOW_QA__.snapshot().level.blocks.find((b) => b.id === "b1").state === "placed");
-    await moveTo(page, 3, 3, "L4 b2");
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === "b2");
-    await moveTo(page, 5, 1, "L4 s2");
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === null && window.__AFTERGLOW_QA__.snapshot().level.blocks.find((b) => b.id === "b2").state === "placed");
-    await shot(page, "10_color_mixing");
-    await moveTo(page, 7, 3, "L4 exit");
-    await continueLevel(page, "Level 4 cleared");
+    await qa(page, "applySolution");
+    await qa(page, "setCameraPeek");
+    await qa(page, "setBounceView", "FINAL");
+    await capture(page, "03_l1_aim_after");
 
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === "b1");
-    await moveTo(page, 3, 1, "L5 s1");
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === null && window.__AFTERGLOW_QA__.snapshot().level.blocks.find((b) => b.id === "b1").state === "placed");
-    await moveTo(page, 8, 1, "L5 gate locked view");
-    await page.keyboard.press("KeyM");
-    await shot(page, "11_color_gate_locked");
-    await page.keyboard.press("KeyM");
-    await moveTo(page, 2, 1, "L5 b2");
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === "b2");
-    await moveTo(page, 8, 2, "L5 s2");
-    await pressE(page, () => window.__AFTERGLOW_QA__.snapshot().player.heldBlockId === null && window.__AFTERGLOW_QA__.snapshot().level.blocks.find((b) => b.id === "b2").state === "placed");
-    await page.keyboard.press("KeyM");
-    await shot(page, "12_color_gate_open");
-    await page.keyboard.press("KeyM");
-    await page.keyboard.press("KeyT");
-    await pulse(page, "KeyW", 500);
-    await shot(page, "13_robot_animation");
-    await moveTo(page, 9, 3, "L5 gate", "zx");
-    await page.waitForFunction(() => window.__AFTERGLOW_QA__.snapshot().appState === "GAME_COMPLETE", null, { timeout: 8000 });
-    await shot(page, "15_game_complete");
+    await loadSolvedPeek(page, 1);
+    await qa(page, "setBounceView", "DIRECT");
+    const l2Direct = await capture(page, "04_l2_direct_only");
+    await qa(page, "setBounceView", "FINAL");
+    const l2Gi = await capture(page, "05_l2_gi_on");
+    assertSameJson(cameraSignature(l2Direct), cameraSignature(l2Gi), "L2 comparison camera");
+    assertSameJson(configSignature(l2Direct), configSignature(l2Gi), "L2 comparison config");
 
+    await loadSolvedPeek(page, 2);
+    await qa(page, "setDebug", { visible: true, surfels: true, normals: false });
+    await capture(page, "06_surfel_debug");
+    await qa(page, "setDebug", { visible: false, surfels: false, normals: false });
+
+    await qa(page, "setCameraPeek");
+    await qa(page, "setBounceView", "DIRECT");
+    const l3Direct = await capture(page, "07_bounce_direct");
+    await qa(page, "setBounceView", "BOUNCE1");
+    const l3Pass1 = await capture(page, "08_bounce_pass1");
+    await qa(page, "setBounceView", "FINAL");
+    const l3Final = await capture(page, "09_bounce_pass2");
+    assertSameJson(cameraSignature(l3Direct), cameraSignature(l3Pass1), "L3 direct/pass1 camera");
+    assertSameJson(cameraSignature(l3Direct), cameraSignature(l3Final), "L3 direct/final camera");
+    assertSameJson(configSignature(l3Direct), configSignature(l3Pass1), "L3 direct/pass1 config");
+    assertSameJson(configSignature(l3Direct), configSignature(l3Final), "L3 direct/final config");
+
+    await loadSolvedPeek(page, 3);
+    await capture(page, "10_color_mixing", {
+      label: "프리즘 분광\n흰빛 -> 빨강 + 초록 + 파랑\n빨강 + 초록 = 노랑 게이트"
+    });
+
+    await qa(page, "loadLevel", 3);
+    await qa(page, "applyAction", { type: "place", blockId: "p1", socketId: "s1", emitDir: 90 });
+    await qa(page, "applyAction", { type: "color", blockId: "p1", colorKey: "red" });
+    await qa(page, "setCameraPeek");
+    await qa(page, "setBounceView", "FINAL");
+    const l4Locked = await capture(page, "11_color_gate_locked");
+    await qa(page, "applyAction", { type: "color", blockId: "p1", colorKey: "white" });
+    const l4Open = await capture(page, "12_color_gate_open");
+    assertSameJson(cameraSignature(l4Locked), cameraSignature(l4Open), "L4 gate comparison camera");
+
+    await qa(page, "loadLevel", 0);
+    await qa(page, "applySolution");
+    await qa(page, "setPlayerCell", { x: 3, z: 1 });
+    await qa(page, "forceLock", true);
+    await qa(page, "setYawPitch", -Math.PI / 2, -0.18);
+    await qa(page, "setCameraMode", "third");
+    await page.keyboard.down("KeyW");
+    await page.waitForTimeout(420);
+    await capture(page, "13_robot_animation");
+    await page.keyboard.up("KeyW");
+
+    await qa(page, "loadLevel", 2);
+    await qa(page, "applySolution");
+    await qa(page, "setPlayerCell", { x: 3, z: 2 });
+    await qa(page, "setYawPitch", Math.PI, -0.46);
+    await capture(page, "14_texture_uv_normal");
+
+    await qa(page, "loadLevel", 4);
+    await qa(page, "applySolution");
+    await qa(page, "setPlayerCell", { x: 6, z: 4 });
+    await page.waitForFunction(() => window.__AFTERGLOW_QA__.snapshot().appState === "GAME_COMPLETE", null, { timeout: 5000 });
+    await capture(page, "15_game_complete");
+
+    await setReportLabel(page, "");
     if (errors.length) throw new Error(`Browser errors during capture: ${errors.join(" | ")}`);
+
+    const files = (await fs.readdir(OUT_DIR)).filter((file) => file.endsWith(".png")).sort();
+    const expected = SHOTS.map((name) => `${name}.png`);
+    assertSameJson(files, expected, "capture file list");
+    console.log(`PASS capture report: ${files.length} PNGs`);
   } finally {
     await browser.close();
     if (server) server.kill("SIGTERM");

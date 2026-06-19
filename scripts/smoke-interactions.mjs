@@ -81,7 +81,7 @@ async function moveTo(page, x, z, label) {
 async function completeL1(page) {
   await page.keyboard.press("KeyE");
   await waitFor(page, (state) => state.player.heldBlockId === "b1", "L1 completion picks block");
-  await moveTo(page, 3, 1, "L1 completion socket");
+  await moveTo(page, 2, 1, "L1 completion placement stance");
   await page.keyboard.press("KeyE");
   await waitFor(
     page,
@@ -91,8 +91,13 @@ async function completeL1(page) {
   await moveTo(page, 6, 1, "L1 completion exit");
   return waitFor(
     page,
-    (state) => state.appState === "LEVEL_COMPLETE" && state.modalTitle === "Level 1 cleared" && state.camera.isLocked === false,
-    "level complete releases pointer lock"
+    (state) =>
+      state.appState === "LEVEL_COMPLETE" &&
+      state.modalTitle === "1단계 통과" &&
+      state.camera.isLocked === false &&
+      state.ui.crosshairVisible === false &&
+      state.modalHidden === false,
+    "level complete releases pointer lock and restores mouse UI"
   );
 }
 
@@ -130,16 +135,45 @@ async function main() {
   try {
     await page.goto(APP_URL, { waitUntil: "domcontentloaded" });
     await startGame(page);
+    await waitFor(
+      page,
+      (state) =>
+        state.ui.lockOverlayVisible === true &&
+        state.ui.lockOverlayStatus === "클릭하면 시작합니다" &&
+        state.ui.objectiveBannerVisible === true &&
+        state.ui.objectiveBannerText === "클릭하여 시작하세요." &&
+        state.ui.helpCardVisible === true &&
+        state.ui.rulesToastVisible === true,
+      "fresh level shows pointer onboarding, objective, help, and rules"
+    );
 
     await clickCanvas(page);
-    await waitFor(page, (state) => state.player.heldBlockId === "b1", "mouse click picks block");
+    let stateAfterFirstClick = await waitFor(
+      page,
+      (state) =>
+        state.player.heldBlockId === null &&
+        (state.camera.isLocked === true || state.ui.lockOverlayVisible === true),
+      "first canvas click is lock-only"
+    );
+    if (!stateAfterFirstClick.camera.isLocked) {
+      stateAfterFirstClick = await page.evaluate(() => window.__AFTERGLOW_QA__.forcePointerLock(true));
+      if (!stateAfterFirstClick.camera.isLocked) throw new Error("QA pointer-lock fallback did not engage");
+    }
+    await waitFor(page, (state) => state.ui.objectiveBannerText === "WASD로 움직이고 마우스로 둘러보세요.", "L1 tutorial starts after lock");
 
-    await moveTo(page, 3, 1, "L1 socket");
+    await clickCanvas(page);
+    await waitFor(
+      page,
+      (state) => state.player.heldBlockId === "b1" && state.ui.objectiveBannerText === "소켓을 바라보고 클릭해 블록을 놓으세요.",
+      "mouse click picks block and advances L1 tutorial"
+    );
+
+    await moveTo(page, 2, 1, "L1 placement stance");
     await waitFor(page, (state) => state.target?.type === "socket" && state.ui.ghostVisible, "socket ghost preview");
     await clickCanvas(page);
     await waitFor(
       page,
-      (state) => state.player.heldBlockId === null && state.level.blocks.find((block) => block.id === "b1")?.state === "placed",
+      (state) => state.player.heldBlockId === null && state.level.blocks.find((block) => block.id === "b1")?.state === "placed" && state.ui.objectiveBannerText.includes("출구"),
       "mouse click places block"
     );
 
@@ -170,8 +204,12 @@ async function main() {
 
     await page.keyboard.press("KeyE");
     await waitFor(page, (state) => state.player.heldBlockId === "b1", "keyboard E picks block");
+    await page.keyboard.press("BracketRight");
+    await waitFor(page, (state) => state.level.blocks.find((block) => block.id === "b1")?.emitDir === 135, "BracketRight rotates held block");
+    await page.keyboard.press("KeyZ");
+    await waitFor(page, (state) => state.level.blocks.find((block) => block.id === "b1")?.emitDir === 90 && state.player.heldBlockId === "b1", "undo restores held block angle");
     await page.keyboard.press("KeyQ");
-    await waitFor(page, (state) => state.level.blocks.find((block) => block.id === "b1")?.colorKey === "red", "Q cycles held color");
+    await waitFor(page, (state) => state.level.blocks.find((block) => block.id === "b1")?.colorKey === "white", "Q leaves locked-color block unchanged");
 
     await page.keyboard.press("KeyG");
     await waitFor(page, (state) => state.level.mode === "DIRECT_ONLY", "G toggles direct-only");
@@ -193,7 +231,8 @@ async function main() {
         state.player.heldBlockId === null &&
         state.level.mode === "GI" &&
         state.level.blocks.find((block) => block.id === "b1")?.state === "pickup" &&
-        state.level.blocks.find((block) => block.id === "b1")?.colorKey === "white",
+        state.level.blocks.find((block) => block.id === "b1")?.colorKey === "white" &&
+        state.level.blocks.find((block) => block.id === "b1")?.emitDir === 90,
       "R resets level state"
     );
 
@@ -210,7 +249,7 @@ async function main() {
     await completeL1(page);
 
     if (errors.length) throw new Error(`Browser errors during smoke: ${errors.join(" | ")}`);
-    console.log("PASS interaction smoke: mouse/E pick-place, ghost, undo, color, reset, GI/B, cameras, fall/respawn, level-end pointer unlock");
+    console.log("PASS interaction smoke: mouse/E pick-place, ghost, angle rotate/undo, locked color, reset, GI/B, cameras, fall/respawn, level-end pointer unlock + mouse UI");
   } finally {
     await browser.close();
     server?.kill("SIGTERM");

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { TILE_SIZE, WALL_HEIGHT, PALETTE } from "../core/constants.js";
-import { cellToWorld } from "../core/math.js";
+import { cellToWorld, degToRad } from "../core/math.js";
 import { createLevelState } from "../game/rules.js";
 import { createTileMesh } from "./tileMesh.js";
 import { buildRoom } from "./room.js";
@@ -55,6 +55,70 @@ function addBouncePanels(group, level, materials) {
   }
 }
 
+function createMirrorFan() {
+  const radius = 2.35;
+  const half = degToRad(24);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute([
+      0, 0.02, 0,
+      Math.sin(-half) * radius, 0.02, Math.cos(-half) * radius,
+      Math.sin(half) * radius, 0.02, Math.cos(half) * radius
+    ], 3)
+  );
+  geometry.setIndex([0, 1, 2]);
+  geometry.computeVertexNormals();
+  return new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({ color: 0x6cffc3, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide })
+  );
+}
+
+function addMirrors(group, level, materials) {
+  const baseGeom = addUv2(new THREE.CylinderGeometry(0.42, 0.42, 0.08, 32));
+  const arrowGeom = new THREE.BoxGeometry(0.12, 0.06, 0.62);
+  const hitGeom = new THREE.BoxGeometry(TILE_SIZE * 0.86, 1.15, TILE_SIZE * 0.86);
+  const hitMat = new THREE.MeshBasicMaterial({ color: 0x8fd7ff, transparent: true, opacity: 0, depthWrite: false });
+  const mirrorMat = new THREE.MeshStandardMaterial({ color: 0xdfe7e4, roughness: 0.26, metalness: 0.55, emissive: 0x111111 });
+  const arrowMat = new THREE.MeshBasicMaterial({ color: 0x6cffc3, transparent: true, opacity: 0.94 });
+  const views = [];
+  const meshes = [];
+  for (const mirror of level.mirrors ?? []) {
+    const base = new THREE.Mesh(baseGeom, mirrorMat.clone());
+    const arrow = new THREE.Mesh(arrowGeom, arrowMat.clone());
+    const fan = createMirrorFan();
+    const hitbox = new THREE.Mesh(hitGeom, hitMat);
+    base.userData.mirrorId = mirror.id;
+    hitbox.userData.mirrorId = mirror.id;
+    hitbox.userData.hitOnly = true;
+    group.add(base, arrow, fan, hitbox);
+    const view = {
+      mirror,
+      base,
+      arrow,
+      fan,
+      hitbox,
+      update(activeLevel) {
+        const source = activeLevel.mirrors?.find((item) => item.id === mirror.id) ?? mirror;
+        const pos = cellToWorld(source.cell, activeLevel, 0.12);
+        base.position.set(pos.x, pos.y, pos.z);
+        arrow.position.set(pos.x, 0.2, pos.z);
+        hitbox.position.set(pos.x, 0.58, pos.z);
+        arrow.rotation.y = degToRad(source.normalYaw ?? 0);
+        fan.position.set(pos.x, 0.03, pos.z);
+        fan.rotation.y = degToRad(source.normalYaw ?? 0);
+        arrow.position.x += Math.sin(degToRad(source.normalYaw ?? 0)) * 0.24;
+        arrow.position.z += Math.cos(degToRad(source.normalYaw ?? 0)) * 0.24;
+      }
+    };
+    view.update(level);
+    views.push(view);
+    meshes.push(base, hitbox);
+  }
+  return { mirrorViews: views, mirrorMeshes: meshes };
+}
+
 export function buildLevel(levelDef, scene, materials) {
   const level = createLevelState(levelDef);
   const group = new THREE.Group();
@@ -73,6 +137,7 @@ export function buildLevel(levelDef, scene, materials) {
     if (tile.icon) group.add(tile.icon);
   }
   const socketMeshes = addSockets(group, level, materials);
+  const { mirrorViews, mirrorMeshes } = addMirrors(group, level, materials);
 
   const blockViews = [];
   for (const block of level.blocks) {
@@ -92,6 +157,8 @@ export function buildLevel(levelDef, scene, materials) {
     tileBySurfel,
     blockMeshes,
     blockViews,
+    mirrorViews,
+    mirrorMeshes,
     socketMeshes,
     exit,
     lights: createLightPool(scene),

@@ -21,11 +21,12 @@ export class Input {
     window.addEventListener("keydown", (event) => this.onKey(event));
     window.addEventListener("keyup", (event) => this.down.delete(event.key.toLowerCase()));
     this.canvas.addEventListener?.("pointerdown", (event) => this.onPointerDown(event));
+    this.canvas.addEventListener?.("wheel", (event) => this.onWheel(event), { passive: false });
   }
 
   onKey(event) {
     const key = event.key.toLowerCase();
-    if (MOVE_KEYS.has(key) || ["e", "q", "z", "r", "g", "b", "m", "t", "p", "o", "f", "f1", "v", "n", "c", "escape"].includes(key)) {
+    if (MOVE_KEYS.has(key) || ["e", "q", "z", "r", "g", "b", "m", "t", "p", "o", "f", "f1", "v", "n", "c", "escape", "[", "]", "?", "/"].includes(key)) {
       event.preventDefault();
     }
     this.down.add(key);
@@ -38,6 +39,12 @@ export class Input {
     if (event.button !== 0) return;
     if (this.onPointerDownCapture?.(event) === true) return;
     this.actions.push({ key: "mouse0", at: performance.now() });
+  }
+
+  onWheel(event) {
+    event.preventDefault();
+    if (Math.abs(event.deltaY) < 1) return;
+    this.actions.push({ key: event.deltaY > 0 ? "]" : "[", at: performance.now() });
   }
 
   poll() {
@@ -61,6 +68,11 @@ export class Input {
 
   isDown(key) {
     return this.down.has(key.toLowerCase());
+  }
+
+  clearTransient() {
+    this.moveBuffer = [];
+    this.actions = [];
   }
 
   movementAxes() {

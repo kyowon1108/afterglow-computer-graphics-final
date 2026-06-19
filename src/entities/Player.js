@@ -11,7 +11,7 @@ const GRAVITY = 30;
 const MAX_STEP_SECONDS = 0.05;
 const SUBSTEPS = 5;
 const ROBOT_SCALE = 0.25;
-const RESPAWN_Y = -3;
+const RESPAWN_Y = -1.5;
 
 function makeCollisionBoxes(level) {
   const boxes = [];
@@ -19,6 +19,7 @@ function makeCollisionBoxes(level) {
   for (const panel of level.bouncePanels ?? []) {
     for (const cell of panel.cells ?? []) panelCells.add(cellKey(cell));
   }
+  for (const mirror of level.mirrors ?? []) panelCells.add(cellKey(mirror.cell));
   for (let z = 0; z < level.height; z++) {
     for (let x = 0; x < level.width; x++) {
       const cell = { x, z };
@@ -218,7 +219,7 @@ export class Player {
       this.position.z += this.velocity.z * stepDt;
       this.pushOutOfWalls();
 
-      if (this.position.y <= RESPAWN_Y) this.respawn(level);
+      if (this.position.y <= RESPAWN_Y) this.respawn(level, cameraRig);
     }
 
     this.deriveCell(level);
@@ -234,7 +235,7 @@ export class Player {
     this.lastSolverCell = { ...this.cell };
   }
 
-  respawn(level) {
+  respawn(level, cameraRig = null) {
     const pos = cellToWorld(this.spawnCell, level, 0);
     this.position.set(pos.x, 0, pos.z);
     this.velocity.set(0, 0, 0);
@@ -242,6 +243,7 @@ export class Player {
     this.deriveCell(level);
     this.mesh.position.copy(this.position);
     this.shadow.position.set(this.position.x, 0.012, this.position.z);
+    cameraRig?.setMode("fp");
     this.justRespawned = true;
   }
 }

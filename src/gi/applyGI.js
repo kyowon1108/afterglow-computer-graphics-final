@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { luminance } from "../core/math.js";
 import { updateTileVisual } from "../world/tileMesh.js";
 
+const VISUAL_CONVERGE_RATE = 8;
+
 export function createLightPool(scene) {
   const lights = [];
   for (let i = 0; i < 4; i++) {
@@ -14,7 +16,12 @@ export function createLightPool(scene) {
 }
 
 export function applyGI(level, visuals, dtMs = 16) {
+  const t = 1 - Math.exp(-VISUAL_CONVERGE_RATE * Math.max(0, dtMs) / 1000);
   for (const surfel of level.grid.surfels) {
+    const target = surfel.gameplayIrradiance ?? surfel.irradiance;
+    surfel.visualIrradiance.r += (target.r - surfel.visualIrradiance.r) * t;
+    surfel.visualIrradiance.g += (target.g - surfel.visualIrradiance.g) * t;
+    surfel.visualIrradiance.b += (target.b - surfel.visualIrradiance.b) * t;
     const record = visuals.tileBySurfel.get(surfel.id);
     if (record) updateTileVisual(record, surfel, dtMs);
   }
@@ -33,4 +40,3 @@ export function applyGI(level, visuals, dtMs = 16) {
   visuals.debugText = `surfels ${level.surfels.length}\nwalkable ${level.grid.surfels.filter((s) => s.walkable).length}\nsolve ${level.lastSolveMs.toFixed(2)}ms`;
   return level.grid.surfels.reduce((sum, s) => sum + luminance(s.irradiance), 0);
 }
-

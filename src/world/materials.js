@@ -50,7 +50,7 @@ export function makeBlockMaterial(colorKey) {
   return new THREE.MeshStandardMaterial({
     color: palette.hex,
     emissive: palette.hex,
-    emissiveIntensity: colorKey === "white" ? 1.6 : 2.0,
-    roughness: 0.28
+    emissiveIntensity: colorKey === "white" ? 0.7 : 1.0,
+    roughness: 0.34
   });
 }

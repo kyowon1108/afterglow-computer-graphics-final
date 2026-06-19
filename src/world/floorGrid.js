@@ -1,7 +1,7 @@
 import { FLOOR_SURFEL_HEIGHT, PALETTE } from "../core/constants.js";
 import { cellKey, cellToWorld, color, colorFromHex, sameCell } from "../core/math.js";
 
-function makeSurfel(id, cell, levelDef, gate) {
+function makeSurfel(id, cell, levelDef, gate, blockedByPanel) {
   const pos = cellToWorld(cell, levelDef, FLOOR_SURFEL_HEIGHT);
   const type = gate ? "gate" : "floor";
   const isSpawn = (levelDef.blocks ?? []).some((block) => sameCell(block.spawnCell, cell));
@@ -18,9 +18,11 @@ function makeSurfel(id, cell, levelDef, gate) {
     bounce1: color(),
     bounce2: color(),
     irradiance: color(),
+    gameplayIrradiance: color(),
     visualIrradiance: color(),
     walkable: false,
     wasWalkable: false,
+    blockedByPanel,
     alwaysSolid: sameCell(cell, levelDef.start) || sameCell(cell, levelDef.exit) || isSpawn,
     gateColor: gate?.gateColor ?? null,
     icon: gate?.icon ?? null,
@@ -29,7 +31,12 @@ function makeSurfel(id, cell, levelDef, gate) {
 }
 
 export function buildGrid(levelDef) {
-  const blocked = new Set(levelDef.interiorWalls.map(cellKey));
+  const blocked = new Set((levelDef.interiorWalls ?? []).map(cellKey));
+  const panelCells = new Set();
+  for (const panel of levelDef.bouncePanels ?? []) {
+    for (const cell of panel.cells ?? []) panelCells.add(cellKey(cell));
+  }
+  for (const mirror of levelDef.mirrors ?? []) panelCells.add(cellKey(mirror.cell));
   const gateByCell = new Map((levelDef.gates ?? []).map((gate) => [cellKey(gate.cell), gate]));
   const surfels = [];
   const tiles = [];
@@ -43,7 +50,7 @@ export function buildGrid(levelDef) {
       const interior = x > 0 && x < levelDef.width - 1 && z > 0 && z < levelDef.height - 1;
       if (!interior && !special) continue;
       if (blocked.has(cellKey(cell))) continue;
-      const surfel = makeSurfel(`f${id++}`, cell, levelDef, gateByCell.get(cellKey(cell)));
+      const surfel = makeSurfel(`f${id++}`, cell, levelDef, gateByCell.get(cellKey(cell)), panelCells.has(cellKey(cell)));
       if (surfel.gateColor && PALETTE[surfel.gateColor]) {
         surfel.albedo = colorFromHex(PALETTE[surfel.gateColor].hex);
       }

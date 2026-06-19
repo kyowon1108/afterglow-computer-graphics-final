@@ -1,4 +1,4 @@
-import { TILE_SIZE, GATE_ON, HUE_DOT, MIN_CHROMA } from "./constants.js";
+import { CONE_SOFT_DEG, EMITTER_CONE_DEG, GATE_ON, HUE_DOT, MIN_CHROMA, ROTATE_STEP_DEG, TILE_SIZE } from "./constants.js";
 
 export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -6,6 +6,55 @@ export function clamp(value, min, max) {
 
 export function clamp01(value) {
   return clamp(value, 0, 1);
+}
+
+export function degToRad(deg) {
+  return (deg * Math.PI) / 180;
+}
+
+export function radToDeg(rad) {
+  return (rad * 180) / Math.PI;
+}
+
+export function smoothstep(edge0, edge1, value) {
+  if (Math.abs(edge1 - edge0) < 1e-8) return value >= edge1 ? 1 : 0;
+  const t = clamp01((value - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+}
+
+export function snapDeg(deg, step = ROTATE_STEP_DEG) {
+  const snapped = Math.round(deg / step) * step;
+  return ((snapped % 360) + 360) % 360;
+}
+
+export function rotateDeg(deg, delta, step = ROTATE_STEP_DEG) {
+  return snapDeg(deg + delta, step);
+}
+
+export function yawToEmitDir(cameraYawRadians) {
+  return snapDeg(-radToDeg(cameraYawRadians));
+}
+
+export function normalize2(v) {
+  const len = Math.hypot(v.x, v.z);
+  if (len < 1e-8) return { x: 0, z: 0 };
+  return { x: v.x / len, z: v.z / len };
+}
+
+export function angleToDir(deg) {
+  const rad = degToRad(deg);
+  return { x: Math.sin(rad), z: Math.cos(rad) };
+}
+
+export function coneWeight(fromPos, toPos, dirDeg, coneDeg = EMITTER_CONE_DEG) {
+  if (coneDeg >= 360) return 1;
+  const toS = normalize2({ x: toPos.x - fromPos.x, z: toPos.z - fromPos.z });
+  if (Math.hypot(toS.x, toS.z) < 1e-8) return 1;
+  const fwd = angleToDir(dirDeg);
+  const cosA = toS.x * fwd.x + toS.z * fwd.z;
+  const inner = Math.cos(degToRad(coneDeg / 2));
+  const outer = Math.cos(degToRad(coneDeg / 2 + CONE_SOFT_DEG));
+  return smoothstep(outer, inner, cosA);
 }
 
 export function cellKey(cell) {

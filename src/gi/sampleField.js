@@ -15,8 +15,9 @@ function gridCoord(level, worldX, worldZ) {
 
 function sampleCell(level, x, z) {
   const surfel = level.grid.tileAt({ x, z });
-  if (!surfel || surfel.type === "wall") return 0;
-  return surfel.alwaysSolid ? Math.max(WALK_ON, luminance(surfel.irradiance)) : luminance(surfel.irradiance);
+  if (!surfel || surfel.type === "wall" || surfel.blockedByPanel) return 0;
+  const energy = surfel.gameplayIrradiance ?? surfel.irradiance;
+  return surfel.alwaysSolid ? Math.max(WALK_ON, luminance(energy)) : luminance(energy);
 }
 
 export function sampleIrradianceAt(level, worldX, worldZ) {
@@ -50,7 +51,7 @@ export function createGroundContact(state = GroundState.VOID) {
     state,
     pendingState: state,
     pendingMs: 0,
-    coyoteMs: state === GroundState.SOLID ? GROUND_COYOTE_MS : 0,
+    coyoteMs: 0,
     luminance: 0
   };
 }
@@ -74,7 +75,10 @@ export function updateGroundContact(contact, level, worldX, worldZ, dtMs) {
     pendingMs = 0;
   }
 
-  const coyoteMs = nextState === GroundState.SOLID ? GROUND_COYOTE_MS : Math.max(0, contact.coyoteMs - dtMs);
+  let coyoteMs = contact.coyoteMs;
+  if (contact.state === GroundState.SOLID && nextState === GroundState.VOID) coyoteMs = GROUND_COYOTE_MS;
+  else if (nextState === GroundState.VOID) coyoteMs = Math.max(0, coyoteMs - dtMs);
+  else coyoteMs = 0;
   return {
     state: nextState,
     pendingState,

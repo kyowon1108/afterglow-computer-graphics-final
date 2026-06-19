@@ -27,6 +27,20 @@ function drawGateIcon(ctx, iconName) {
     ctx.lineTo(16, 64);
     ctx.closePath();
     iconName === "diamond" ? ctx.stroke() : ctx.fill();
+  } else if (iconName === "plus") {
+    ctx.fillRect(52, 18, 24, 92);
+    ctx.fillRect(18, 52, 92, 24);
+  } else if (iconName === "hex") {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 6 + (i * Math.PI) / 3;
+      const x = 64 + Math.cos(a) * 44;
+      const y = 64 + Math.sin(a) * 44;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
   } else {
     ctx.fillRect(22, 22, 84, 84);
   }
@@ -91,12 +105,17 @@ export function createTileMesh(surfel, materials) {
 
 export function updateTileVisual(tileRecord, surfel, dtMs) {
   const { mesh, edge, icon } = tileRecord;
-  const state = surfel.gateColor && !surfel.walkable ? "gateLocked" : surfel.gateColor && surfel.walkable ? "gateOpen" : surfel.walkable ? "solid" : surfel.wasWalkable ? "fading" : "void";
-  if (state !== mesh.userData.tileState) {
-    mesh.userData.tileState = state;
+  const rawState = surfel.gateColor && !surfel.walkable ? "gateLocked" : surfel.gateColor && surfel.walkable ? "gateOpen" : surfel.walkable ? "solid" : "void";
+  const wasSolidState = mesh.userData.tileState === "solid" || mesh.userData.tileState === "gateOpen";
+  if (rawState !== mesh.userData.rawTileState) {
+    mesh.userData.rawTileState = rawState;
     mesh.userData.transitionTimer = TILE_TELEGRAPH_MS;
   }
+  const fading = rawState === "void" && (surfel.wasWalkable || wasSolidState) && mesh.userData.transitionTimer > 0;
+  const state = fading ? "fading" : rawState;
+  mesh.userData.tileState = state;
   mesh.userData.transitionTimer = Math.max(0, mesh.userData.transitionTimer - dtMs);
+  if (state === "void") surfel.wasWalkable = false;
   const lum = luminance(surfel.visualIrradiance);
   const e = surfel.visualIrradiance;
   mesh.material.color.setRGB(
@@ -106,9 +125,10 @@ export function updateTileVisual(tileRecord, surfel, dtMs) {
   );
   mesh.material.emissive.setRGB(Math.min(e.r * 0.22, 1), Math.min(e.g * 0.22, 1), Math.min(e.b * 0.22, 1));
   mesh.material.emissiveIntensity = Math.min(lum, 1.8);
-  mesh.material.opacity = state === "void" ? 0.48 : 1;
+  const fadeProgress = TILE_TELEGRAPH_MS > 0 ? mesh.userData.transitionTimer / TILE_TELEGRAPH_MS : 0;
+  mesh.material.opacity = state === "void" ? 0.48 : state === "fading" ? 0.52 + fadeProgress * 0.38 : 1;
   edge.visible = state !== "void";
-  edge.material.opacity = state === "fading" ? 0.75 : state === "gateLocked" ? 0.25 : 0.55;
+  edge.material.opacity = state === "fading" ? 0.25 + fadeProgress * 0.55 : state === "gateLocked" ? 0.25 : 0.55;
   if (icon) {
     icon.visible = true;
     icon.material.color.setHex(state === "gateOpen" ? PALETTE[surfel.gateColor]?.hex ?? 0xffffff : 0xf1f5ec);

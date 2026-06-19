@@ -83,8 +83,8 @@ worldZ = (cell.z - height/2) * TILE_SIZE
 TileSurfel = {
   id, cell:{x,z}, pos:Vector3, normal:Vector3,
   type:'floor'|'wall'|'gate', albedo:Color,
-  direct:Color, bounce1:Color, bounce2:Color,
-  irradiance:Color, visualIrradiance:Color,
+  direct:Color, directPlaced:Color, directCarried:Color, bounce1:Color, bounce2:Color,
+  irradiance:Color, gameplayIrradiance:Color, visualIrradiance:Color,
   walkable:boolean, wasWalkable:boolean,
   gateColor:null|'red'|'green'|'blue', icon:null|'triangle'|'square'|'circle', uvRect
 }
@@ -93,7 +93,7 @@ EmissiveBlock = { id, spawnCell:{x,z}, cell:{x,z}|null, colorKey:'white'|'red'|'
 // 초기: state='pickup', cell=null, spawnCell에 존재(소켓 아님). 픽업 시 'carried', 소켓 배치 시 'placed'(cell=socket.cell).
 // lightPos는 state로 분기(중요): pickup→빛 없음(emit 안 함) / carried→playerCell / placed→socket cell
 //   placed:  lightPos = cellToWorld(cell)       + (0,BLOCK_LIGHT_HEIGHT,0)   // full + bounce
-//   carried: lightPos = cellToWorld(playerCell) + (0,BLOCK_LIGHT_HEIGHT,0)   // direct-only, CARRY_RADIUS, no bounce
+//   carried: lightPos = cellToWorld(playerCell) + (0,BLOCK_LIGHT_HEIGHT,0)   // visual direct-only, CARRY_RADIUS, no bounce/gameplay
 //   pickup:  방출 안 함 (spawnCell을 lightPos로 쓰지 말 것)
 // floorSurfel.pos = cellToWorld(cell) + (0, FLOOR_SURFEL_HEIGHT, 0)
 WallSegment = { a:Vector2, b:Vector2, normal:Vector3, blocksVisibility:true }
@@ -106,14 +106,18 @@ WallSegment = { a:Vector2, b:Vector2, normal:Vector3, blocksVisibility:true }
 
 ```js
 solve(level, mode='GI'):
-  for s in surfels: s.direct = s.bounce1 = s.bounce2 = Color(0)
+  for s in surfels: s.directPlaced = s.directCarried = s.bounce1 = s.bounce2 = Color(0)
   computeDirect(level)            # (3.1)
-  computeBounce(level, pass=1)    # (3.2) source=direct
-  computeBounce(level, pass=2)    # (3.2) source=direct+bounce1
+  computeBounce(level, pass=1)    # (3.2) source=directPlaced
+  computeBounce(level, pass=2)    # (3.2) source=directPlaced+bounce1
   for s in surfels:
-    s.irradiance = combineByMode(s, mode)   # (3.3)
-    s.visualIrradiance.lerp(s.irradiance, VISUAL_LERP)   # 시각용 부드러운 전이
+    s.irradiance = combineVisualByMode(s, mode)       # directPlaced+directCarried for visuals
+    s.gameplayIrradiance = combineGameplayByMode(s, mode)  # excludes directCarried
     updateWalkable(s)             # (3.4)
+
+applyGI(level, visuals, dt):
+  # 매 프레임 dt 기반으로 gameplayIrradiance를 향해 visualIrradiance 수렴
+  # carried light는 floor visual을 standable처럼 칠하지 않는다.
 ```
 
 ### 3.1 Direct (L4 직접항)
@@ -127,9 +131,10 @@ for s in surfels:
       cosT = max(0, dot(s.normal, L))            # floor normal=(0,1,0) → 높이차가 있어야 cosT>0
       d2 = max(distanceSq(Lp, s.pos), 0.25)      # 특이점 클램프
       I  = (b.state=='carried') ? b.intensity*CARRY_INTENSITY_SCALE : b.intensity
-      s.direct.add( b.color * I * cosT / d2 )
+      if b.state=='placed':  s.directPlaced.add( b.color * I * cosT / d2 )
+      if b.state=='carried': s.directCarried.add( b.color * I * cosT / d2 )
 ```
-> bounce 패스(3.2)는 **placed 블록이 만든 direct만** source로 사용. carried 블록은 bounce 미참여(`s.direct` 중 carried 기여는 bounce source에서 제외하거나, carried는 별도 버퍼에 누적).
+> bounce 패스(3.2)는 **placed 블록이 만든 directPlaced만** source로 사용. carried 블록은 visual direct bucket에만 누적되며 walkable/gate/bounce에는 절대 참여하지 않는다.
 
 ### 3.2 Bounce (L8 indirect, 이웃 surfel 재사용 · 2패스=다중 바운스)
 ```js
@@ -138,28 +143,31 @@ computeBounce(level, pass):
   for s in surfels:
     for n in neighborsWithin(s, BOUNCE_RADIUS):  # 공간 그리드로 후보 축소
       if n===s or !visible(s.pos, n.pos, level.walls): continue
-      src = (pass==1) ? n.direct : add(n.direct, n.bounce1)
+      src = (pass==1) ? n.directPlaced : add(n.directPlaced, n.bounce1)
       f = formFactor(s, n)                        # cosS*cosN/(π·d2)
       s[target].add( n.albedo * src * f * PATCH_AREA * BOUNCE_SCALE )
     clamp total indirect luminance to INDIRECT_CLAMP
 ```
 `formFactor(s,n)`: `dir=normalize(n.pos-s.pos); cosS=max(0,dot(s.normal,dir)); cosN=max(0,dot(n.normal,-dir)); d2=max(distanceSq,0.25); return cosS*cosN/(π*d2)`.
 
-### 3.3 모드 결합 (리포트 캡처)
+### 3.3 모드 결합 (visual vs gameplay)
 ```
-DIRECT_ONLY → direct
-BOUNCE1     → direct + bounce1
-BOUNCE2/GI  → direct + bounce1 + bounce2
+visual DIRECT_ONLY → directPlaced + directCarried
+visual BOUNCE1     → directPlaced + directCarried + bounce1
+visual BOUNCE2/GI  → directPlaced + directCarried + bounce1 + bounce2
+gameplay DIRECT_ONLY → directPlaced
+gameplay BOUNCE1     → directPlaced + bounce1
+gameplay BOUNCE2/GI  → directPlaced + bounce1 + bounce2
 VISUAL_OFF  → 0 (디버그)
 ```
 
 ### 3.4 walkable (히스테리시스 + 게이트)
 ```js
-L = luminance(s.irradiance)
+L = luminance(s.gameplayIrradiance)
 s.wasWalkable = s.walkable
 s.walkable = s.walkable ? (L >= WALK_OFF) : (L >= WALK_ON)   // 일반 타일(white 만능)
 if s.gateColor:                                              // 색 게이트(white 차단)
-  s.walkable = hueMatchesGate(s.irradiance, paletteColor(s.gateColor))
+  s.walkable = hueMatchesGate(s.gameplayIrradiance, paletteColor(s.gateColor))
 ```
 **함수명 고정:** 게이트 판정은 `hueMatchesGate(E, target)`, 내부에서 `hueDot` 헬퍼 사용:
 ```
@@ -172,10 +180,10 @@ hueDot(E,t) = dot(normalize(E.rgb), normalize(t.rgb))       // (또는 hue각 ±
 
 ### 3.5 Block state: pickup / carried / placed (닭-달걀/트리비얼화/소켓충돌 방지)
 - **pickup(초기):** 블록은 `spawnCell`(**소켓 아님**)에 `state:'pickup'`로 존재. **빛 없음**(또는 무시 가능). `spawnCell`은 start 패드에 인접(또는 alwaysSolid) → 시작 시 항상 집을 수 있음. ※ "초기 블록을 소켓에 placed로 두지 말 것"(소켓에만 배치 규칙과 충돌).
-- **carried(들고 있음):** 빛은 **플레이어 셀에서 직접광만**, 반경 `CARRY_RADIUS`(짧음), 강도×`CARRY_INTENSITY_SCALE`, **bounce 패스 미참여**. → 이동용 최소 조명. 코너 너머·원거리·bounce 필요 타일은 못 켠다.
+- **carried(들고 있음):** 빛은 **플레이어 셀에서 visual 직접광만**, 반경 `CARRY_RADIUS`(짧음), 강도×`CARRY_INTENSITY_SCALE`, **bounce/walkable/gate 미참여**. 들고 있는 빛은 바닥을 만들거나 색 게이트를 열 수 없다.
 - **placed(소켓에 배치):** 전체 강도 + **bounce 참여** + 영속. → 멀리/코너로 빛을 보내는 유일한 수단.
 - **start·exit 패드는 항상 solid**(빛 무관). solver는 이 패드를 `alwaysSolid=true`로 두고 walkable 강제 true.
-> 효과: 플레이어는 절대 빛 없이 갇히지 않으면서(공정), 퍼즐은 "배치/bounce"로만 풀린다(트리비얼화 방지).
+> 효과: 퍼즐은 "배치/bounce"로만 풀리고, 첫 소켓은 start/spawn/already-lit ground에서 placement reach 안에 있어야 한다(트리비얼화 방지).
 
 ### 3.6 walkable(logic) → TileState(visual) 분리
 `walkable` boolean은 **로직 즉시값**, 화면 전이는 **별도 타이머**로(공정성). `tileMesh.js`가 관리:
@@ -219,8 +227,7 @@ export const WALL_HEIGHT = 2.4, WALL_THICKNESS = 0.18;
 export const WALK_ON = 0.60, WALK_OFF = 0.40;          // 히스테리시스
 export const BOUNCE_RADIUS = 4.25 * TILE_SIZE;
 export const BOUNCE_SCALE = 9.8, INDIRECT_CLAMP = 0.72, BOUNCE_PASSES = 2;
-export const DIRECT_INTENSITY_WHITE = 17, DIRECT_INTENSITY_COLOR = 19;
-export const VISUAL_LERP = 0.18;
+export const DIRECT_INTENSITY_WHITE = 17, DIRECT_INTENSITY_COLOR = 30;
 export const MOVE_LERP_MS = 80, COYOTE_MS = 85, INPUT_BUFFER_MS = 100;
 export const RESPAWN_FADE_MS = 350, TILE_TELEGRAPH_MS = 400;
 export const MAX_SURFELS = 450, MAX_BLOCKS = 4;

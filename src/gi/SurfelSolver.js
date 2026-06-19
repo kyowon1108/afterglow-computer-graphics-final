@@ -6,18 +6,23 @@ import {
   CARRY_RADIUS,
   DIRECT_INTENSITY_COLOR,
   DIRECT_INTENSITY_WHITE,
+  EMITTER_CONE_DEG,
   INDIRECT_CLAMP,
+  MIRROR_GAIN,
+  MIRROR_RECV_MIN,
   PALETTE,
+  PRISM_SPREAD_DEG,
   TILE_SIZE,
-  VISUAL_LERP,
   WALK_OFF,
   WALK_ON
 } from "../core/constants.js";
 import {
   addColor,
+  angleToDir,
   cellToWorld,
   cloneColor,
   color,
+  coneWeight,
   distanceSq3,
   dot3,
   hueMatchesGate,
@@ -37,8 +42,8 @@ function blockColor(block) {
   return PALETTE[block.colorKey]?.rgb ?? PALETTE.white.rgb;
 }
 
-function blockIntensity(block) {
-  return block.colorKey === "white" ? DIRECT_INTENSITY_WHITE : DIRECT_INTENSITY_COLOR;
+function intensityForColor(colorKey) {
+  return colorKey === "white" ? DIRECT_INTENSITY_WHITE : DIRECT_INTENSITY_COLOR;
 }
 
 function blockLightPos(block, level) {
@@ -51,6 +56,10 @@ function allSurfels(level) {
   return level.surfels;
 }
 
+function mirrorSurfels(level) {
+  return level.wallSurfels?.filter((surfel) => surfel.type === "mirror") ?? [];
+}
+
 function clearSurfel(s) {
   resetColor(s.direct);
   resetColor(s.directPlaced);
@@ -58,20 +67,85 @@ function clearSurfel(s) {
   resetColor(s.bounce1);
   resetColor(s.bounce2);
   resetColor(s.irradiance);
+  if (!s.gameplayIrradiance) s.gameplayIrradiance = color();
+  else resetColor(s.gameplayIrradiance);
 }
 
-function addDirectContribution(surfel, block, level, bucket) {
+function syncMirrorSurfels(level) {
+  for (const surfel of mirrorSurfels(level)) {
+    const mirror = level.mirrors?.find((item) => item.id === surfel.mirrorId);
+    if (!mirror) continue;
+    const dir = angleToDir(mirror.normalYaw);
+    surfel.normal.x = dir.x;
+    surfel.normal.y = 0;
+    surfel.normal.z = dir.z;
+  }
+}
+
+function expandEmitters(block, level) {
   const lightPos = blockLightPos(block, level);
   if (!lightPos) return;
-  if (block.state === "carried" && Math.sqrt(distanceSq3(lightPos, surfel.pos)) > CARRY_RADIUS) return;
-  if (surfel.type !== "wall" && !visible(lightPos, surfel.pos, level.walls)) return;
-  const toLight = normalize3(sub3(lightPos, surfel.pos));
+  if (block.state === "carried" || block.kind !== "prism") {
+    return [
+      {
+        block,
+        pos: lightPos,
+        state: block.state,
+        colorKey: block.colorKey,
+        rgb: blockColor(block),
+        emitDir: block.emitDir ?? 0,
+        coneDeg: block.state === "placed" ? block.coneDeg ?? EMITTER_CONE_DEG : 360,
+        intensity: intensityForColor(block.colorKey)
+      }
+    ];
+  }
+  if (block.colorKey !== "white") {
+    return [
+      {
+        block,
+        pos: lightPos,
+        state: block.state,
+        colorKey: block.colorKey,
+        rgb: blockColor(block),
+        emitDir: block.emitDir ?? 0,
+        coneDeg: block.coneDeg ?? EMITTER_CONE_DEG,
+        intensity: intensityForColor(block.colorKey)
+      }
+    ];
+  }
+  return [
+    { colorKey: "red", offset: 0 },
+    { colorKey: "green", offset: PRISM_SPREAD_DEG },
+    { colorKey: "blue", offset: -PRISM_SPREAD_DEG }
+  ].map(({ colorKey, offset }) => ({
+    block,
+    pos: lightPos,
+    state: block.state,
+    colorKey,
+    rgb: PALETTE[colorKey].rgb,
+    emitDir: (block.emitDir ?? 0) + offset,
+    coneDeg: block.coneDeg ?? EMITTER_CONE_DEG,
+    intensity: intensityForColor(colorKey)
+  }));
+}
+
+function targetCosTerm(surfel, sourcePos) {
+  const toLight = normalize3(sub3(sourcePos, surfel.pos));
   const rawCos = dot3(surfel.normal, toLight);
-  const cosT = surfel.type === "wall" ? Math.max(0.08, Math.abs(rawCos)) : Math.max(0, rawCos);
+  return surfel.type === "wall" || surfel.type === "mirror" ? Math.max(0.08, Math.abs(rawCos)) : Math.max(0, rawCos);
+}
+
+function addDirectContribution(surfel, emitter, level, bucket) {
+  const lightPos = emitter.pos;
+  if (emitter.state === "carried" && Math.sqrt(distanceSq3(lightPos, surfel.pos)) > CARRY_RADIUS) return;
+  if (!visible(lightPos, surfel.pos, level.walls)) return;
+  const cosT = targetCosTerm(surfel, lightPos);
   if (cosT <= 0) return;
+  const cone = coneWeight(lightPos, surfel.pos, emitter.emitDir, emitter.coneDeg);
+  if (cone <= 0) return;
   const d2 = Math.max(distanceSq3(lightPos, surfel.pos), 0.25);
-  const intensity = blockIntensity(block) * (block.state === "carried" ? CARRY_INTENSITY_SCALE : 1);
-  const contribution = scaledColor(blockColor(block), (intensity * cosT) / d2);
+  const intensity = emitter.intensity * (emitter.state === "carried" ? CARRY_INTENSITY_SCALE : 1);
+  const contribution = scaledColor(emitter.rgb, (intensity * cosT * cone) / d2);
   addColor(bucket, contribution);
 }
 
@@ -79,12 +153,61 @@ function computeDirect(level) {
   for (const surfel of allSurfels(level)) {
     for (const block of level.blocks) {
       if (!block.on || !["placed", "carried"].includes(block.state)) continue;
-      if (block.state === "placed") addDirectContribution(surfel, block, level, surfel.directPlaced);
-      if (block.state === "carried") addDirectContribution(surfel, block, level, surfel.directCarried);
+      for (const emitter of expandEmitters(block, level) ?? []) {
+        if (block.state === "placed") addDirectContribution(surfel, emitter, level, surfel.directPlaced);
+        if (block.state === "carried") addDirectContribution(surfel, emitter, level, surfel.directCarried);
+      }
     }
+  }
+}
+
+function combineDirect(level) {
+  for (const surfel of allSurfels(level)) {
     surfel.direct.r = surfel.directPlaced.r + surfel.directCarried.r;
     surfel.direct.g = surfel.directPlaced.g + surfel.directCarried.g;
     surfel.direct.b = surfel.directPlaced.b + surfel.directCarried.b;
+  }
+}
+
+function mirrorInputFromDirect(level) {
+  const inputs = new Map();
+  for (const surfel of mirrorSurfels(level)) inputs.set(surfel.mirrorId, cloneColor(surfel.directPlaced));
+  return inputs;
+}
+
+function addToMirrorInput(inputs, surfel, contribution) {
+  if (surfel.type !== "mirror" || !surfel.mirrorId) return;
+  const existing = inputs.get(surfel.mirrorId) ?? color();
+  addColor(existing, contribution);
+  inputs.set(surfel.mirrorId, existing);
+}
+
+function addMirrorContribution(target, mirrorSurfel, mirror, recv, level, nextInputs) {
+  if (target === mirrorSurfel) return;
+  if (distanceSq3(target.pos, mirrorSurfel.pos) > BOUNCE_RADIUS * BOUNCE_RADIUS) return;
+  if (!visible(mirrorSurfel.pos, target.pos, level.walls)) return;
+  const cone = coneWeight(mirrorSurfel.pos, target.pos, mirror.normalYaw, EMITTER_CONE_DEG);
+  if (cone <= 0) return;
+  const cosT = targetCosTerm(target, mirrorSurfel.pos);
+  if (cosT <= 0) return;
+  const d2 = Math.max(distanceSq3(mirrorSurfel.pos, target.pos), 0.25);
+  const contribution = scaledColor(multiplyColor(mirrorSurfel.albedo, recv), (MIRROR_GAIN * cone * cosT) / d2);
+  addColor(target.directPlaced, contribution);
+  addToMirrorInput(nextInputs, target, contribution);
+}
+
+function computeMirrors(level) {
+  let inputs = mirrorInputFromDirect(level);
+  for (let pass = 0; pass < 2; pass++) {
+    const nextInputs = new Map();
+    for (const mirrorSurfel of mirrorSurfels(level)) {
+      const mirror = level.mirrors?.find((item) => item.id === mirrorSurfel.mirrorId);
+      if (!mirror) continue;
+      const recv = inputs.get(mirror.id) ?? color();
+      if (luminance(recv) < MIRROR_RECV_MIN) continue;
+      for (const target of allSurfels(level)) addMirrorContribution(target, mirrorSurfel, mirror, recv, level, nextInputs);
+    }
+    inputs = nextInputs;
   }
 }
 
@@ -143,9 +266,19 @@ function combinedByMode(surfel, mode) {
   return result;
 }
 
+function gameplayByMode(surfel, mode) {
+  if (mode === "VISUAL_OFF") return color();
+  const result = cloneColor(surfel.directPlaced);
+  if (mode === "DIRECT_ONLY") return result;
+  addColor(result, surfel.bounce1);
+  if (mode === "BOUNCE1") return result;
+  addColor(result, surfel.bounce2);
+  return result;
+}
+
 function updateWalkable(surfel) {
   surfel.wasWalkable = surfel.walkable;
-  if (surfel.type === "wall") {
+  if (surfel.type === "wall" || surfel.type === "mirror" || surfel.blockedByPanel) {
     surfel.walkable = false;
     return;
   }
@@ -155,26 +288,29 @@ function updateWalkable(surfel) {
     return;
   }
 
-  const lit = luminance(surfel.irradiance);
+  const gameplayEnergy = surfel.gameplayIrradiance ?? surfel.irradiance;
+  const lit = luminance(gameplayEnergy);
   let next = surfel.walkable ? lit >= WALK_OFF : lit >= WALK_ON;
   if (surfel.gateColor) {
-    next = hueMatchesGate(surfel.irradiance, PALETTE[surfel.gateColor].rgb);
+    next = hueMatchesGate(gameplayEnergy, PALETTE[surfel.gateColor].rgb);
   }
   surfel.walkable = next;
 }
 
 export function solve(level, mode = level.mode ?? "GI") {
   const started = performance.now?.() ?? Date.now();
+  syncMirrorSurfels(level);
   for (const surfel of allSurfels(level)) clearSurfel(surfel);
   computeDirect(level);
+  computeMirrors(level);
+  combineDirect(level);
   computeBounce(level, 1);
   computeBounce(level, 2);
   for (const surfel of allSurfels(level)) {
     const next = combinedByMode(surfel, mode);
+    const gameplay = gameplayByMode(surfel, mode);
     surfel.irradiance = next;
-    surfel.visualIrradiance.r += (next.r - surfel.visualIrradiance.r) * VISUAL_LERP;
-    surfel.visualIrradiance.g += (next.g - surfel.visualIrradiance.g) * VISUAL_LERP;
-    surfel.visualIrradiance.b += (next.b - surfel.visualIrradiance.b) * VISUAL_LERP;
+    surfel.gameplayIrradiance = gameplay;
     updateWalkable(surfel);
   }
   level.mode = mode;

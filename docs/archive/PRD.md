@@ -18,7 +18,7 @@
  → 밝기 임계값 이상 타일만 walkable
  → 빛의 길을 만들어 출구(exit) 도달 → 다음 레벨
 ```
-직접광만으로는 닿지 않는 코너 뒤 타일을 **벽에 빛을 튕겨(bounce)** 살려야 풀리는 구간이 핵심 "aha".
+직접광만으로는 닿지 않는 코너 뒤 타일을 **relay mirror/reflector와 bounce**로 살려야 풀리는 구간이 핵심 "aha".
 
 ## 3. 절대 원칙 (2-레이어)
 | 레이어 | 책임 | 성질 |
@@ -65,16 +65,16 @@
 | (예비) | Orange | `#E69F00` | ◆ |
 
 - **White/색게이트 규칙(충돌 해소):** White는 *일반 타일*엔 만능. 그러나 **색 게이트는 white로 못 연다**(white는 chroma≈0). 색 게이트 = `hueMatchesGate(E, target)` = `밝기 ≥ GATE_ON AND chroma ≥ MIN_CHROMA AND hueDot(target) ≥ HUE_DOT`. → white+color 혼합으로 color 성분이 유지되면 통과. (함수명/식은 IMPLEMENTATION_GUIDE §3.4)
-- **carried/placed 규칙:** 들고 있는 블록은 직접광·짧은 반경·bounce 미참여(이동용). 소켓에 **배치해야** 전체 강도+bounce+영속. start·exit 패드는 항상 solid. (상세 LEVELS.md 공통 규칙)
+- **carried/placed 규칙:** 들고 있는 블록은 visual 직접광만 만들고 walkable/gate/bounce에는 미참여. 소켓에 **배치해야** 전체 강도+bounce+영속 gameplay energy가 생긴다. start·exit·spawn 패드는 항상 solid. (상세 LEVELS.md 공통 규칙)
 
 ## 7. 레벨 (5개, introduce→use→combine)
 | 레벨 | 목표 | 블록 | 핵심 |
 |---|---|---|---|
 | L1 | 직접광으로 길 만들기 | white 1 | socket에 놓으면 직선 경로 점등(튜토리얼) |
-| L2 | 코너 뒤 타일 살리기 | white 1 | **단일 bounce 필수**(direct only로는 실패) = aha |
-| L3 | 거리/2-bounce 조절 | white 1 | bounce1/bounce2 차이 |
-| L4 | 두 빛 조합 | white 2 (or +color) | additive irradiance로 다리 완성 |
-| L5 | 색 게이트 통과(피날레) | red/green/blue (+white) | 밝기+hueMatch, 난도보다 스펙터클 |
+| L2 | 코너 뒤 타일 살리기 | locked white 1 + mirror | mirror 회전 필수, direct only 실패 |
+| L3 | 두 미러 연쇄 | locked white 1 + mirrors 2 | 두 relay mirror 각도가 모두 맞아야 exact exit 경로 형성 |
+| L4 | 프리즘 색 분할 | white prism 1 | R+G split로 yellow gate 개방 |
+| L5 | 색 게이트 통과(피날레) | locked red + locked blue + mirror | red direct + blue relay로 magenta gate 개방 |
 전체 플레이 3~6분. 클리어=exit 도달, 최종=Game Complete.
 
 > **"GI-off fallback"의 정확한 의미:** 앱이 구동 불능이 되지 않고 direct-light 베이스라인이 보이는 것(엔진 항상 동작). **모든 레벨이 GI off로 클리어 가능하다는 뜻이 아니다.** L2는 의도적으로 GI/bounce가 있어야만 풀린다.
@@ -96,6 +96,7 @@
 ## 10. 성공 기준 (Acceptance)
 - 5레벨 전부 디버그 텔레포트 없이 클리어 가능.
 - L2: GI off(direct only)면 실패, GI on이면 성공이 **눈에 띄게** 다름.
+- 모든 레벨: exhaustive validation에서 intended class 밖 winning config 0개.
 - walkable 타일이 CPU solver 상태와 정확히 일치(보이는 대로 밟힘).
 - 코요테/버퍼/언두/리셋 동작, 소프트락 불가.
 - `npm run build` 통과, 에셋 다운로드 실패해도 절차적 폴백으로 동작.

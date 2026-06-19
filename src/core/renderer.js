@@ -10,14 +10,14 @@ export function initRenderer(canvas) {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.9;
+  renderer.toneMappingExposure = 0.92;
   renderer.shadowMap.enabled = false;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x05080a);
   scene.fog = new THREE.FogExp2(0x05080a, 0.035);
 
-  const ambient = new THREE.AmbientLight(0x586363, 0.25);
-  const key = new THREE.DirectionalLight(0xfff4d6, 0.6);
+  const ambient = new THREE.AmbientLight(0x687475, 0.38);
+  const key = new THREE.DirectionalLight(0xfff4d6, 0.65);
   key.position.set(4, 9, 6);
   scene.add(ambient, key);
 
@@ -34,7 +34,7 @@ export function initRenderer(canvas) {
     const size = new THREE.Vector2(window.innerWidth, window.innerHeight);
     composer = new EffectComposer(renderer);
     renderPass = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(size, 0.6, 0.4, 0.9);
+    const bloomPass = new UnrealBloomPass(size, 0.38, 0.32, 1.22);
     outlinePass = new OutlinePass(size, scene, camera);
     outlinePass.edgeStrength = 3.0;
     outlinePass.edgeGlow = 0.35;

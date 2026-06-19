@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,42 +9,57 @@
   <body>
     <div id="app">
       <canvas id="gameCanvas"></canvas>
+      <div id="lockOverlay" class="lockOverlay hidden">
+        <div class="lockPrompt">
+          <strong>클릭하여 시작</strong>
+          <span id="lockOverlayStatus">클릭하면 시작합니다</span>
+        </div>
+      </div>
       <section id="titleOverlay" class="overlay overlay--title">
         <div class="titlePanel">
           <h1>AFTERGLOW</h1>
-          <p>Light makes the floor. Place blocks, bend the glow, reach the exit.</p>
-          <button id="startButton" type="button">Start</button>
+          <p>빛이 닿은 바닥만 밟을 수 있습니다. 블록을 놓고 빛을 휘게 해 출구로 가세요.</p>
+          <button id="startButton" type="button">시작</button>
           <div class="titleGrid">
-            <span>Move WASD</span>
-            <span>Mouse Look</span>
-            <span>Q Color</span>
-            <span>Z Undo</span>
-            <span>R Reset</span>
-            <span>E / Click Pick/Place</span>
+            <span>이동 WASD</span>
+            <span>시점 마우스</span>
+            <span>회전 휠</span>
+            <span>되돌리기 Z</span>
+            <span>다시하기 R</span>
+            <span>집기·놓기 E·클릭</span>
           </div>
-          <small>CPU SurfelGI-style radiosity approximation · Assets CC0 with procedural fallback</small>
+          <small>CPU SurfelGI 근사 · 에셋 CC0(다운로드 실패 시 자동 대체)</small>
         </div>
       </section>
       <section id="levelOverlay" class="overlay overlay--modal hidden">
         <div class="modalPanel">
-          <h2 id="overlayTitle">Level cleared</h2>
+          <h2 id="overlayTitle">단계 통과</h2>
           <p id="overlayBody"></p>
-          <button id="overlayButton" type="button">Continue</button>
+          <button id="overlayButton" type="button">다음</button>
         </div>
       </section>
       <div id="hud" class="hud hidden">
-        <div class="hudTop">AFTERGLOW · <span id="levelLabel">Level 1 / 5</span></div>
+        <div class="hudTop">AFTERGLOW · <span id="levelLabel"></span></div>
+        <div id="objectiveBanner" class="objectiveBanner hidden"></div>
+        <div id="lessonHint" class="lessonHint hidden"></div>
+        <div id="helpCard" class="helpCard hidden">
+          <strong>조작</strong>
+          <span>이동 WASD · 시점 마우스 · 회전 휠·[ ] · 집기·놓기 E·클릭 · 색 Q · 되돌리기 Z · 다시하기 R · 도움말 ?</span>
+        </div>
+        <div id="rulesToast" class="rulesToast hidden">어두운 바닥을 밟으면 떨어집니다 · R 다시하기 · Z 되돌리기</div>
         <div class="hudObjective" id="objectiveLabel"></div>
         <div class="hudStatus">
-          <span>Camera <b id="cameraLabel">FP</b></span>
+          <span>시점 <b id="cameraLabel">FP</b></span>
           <span>GI <b id="giLabel">GI</b></span>
-          <span>Bounce <b id="bounceLabel">FINAL</b></span>
-          <span>Held <b id="heldLabel">none</b></span>
-          <span>Foot <b id="footLabel">0.00 void</b></span>
+          <span>광선 <b id="bounceLabel">FINAL</b></span>
+          <span>든 블록 <b id="heldLabel">없음</b></span>
+          <span>발밑 <b id="footLabel">0.00 허공</b></span>
         </div>
         <div id="crosshair" class="crosshair"></div>
+        <div id="angleIndicator" class="angleIndicator hidden"></div>
         <div id="respawnFade" class="respawnFade"></div>
-        <div class="hudControls">WASD move · mouse look · E/click pick/place · Q color · Z undo · R reset · G GI · B view · M peek · T third · F1/V/N debug · C capture · Esc pause</div>
+        <div id="hintLabel" class="hudHint hidden"></div>
+        <div class="hudControls">이동 WASD · 시점 마우스 · 집기·놓기 E·클릭 · 회전 휠·[ ] · 색 Q · 되돌리기 Z · 다시하기 R · 도움말 ? · GI 비교 G · 보기 B · 위에서 M · 3인칭 T · 디버그 F1·V·N · 캡처 C · 메뉴 Esc</div>
         <div id="debugPanel" class="debugPanel hidden"></div>
       </div>
     </div>

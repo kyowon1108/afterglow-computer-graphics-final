@@ -1,5 +1,5 @@
 import { TILE_SIZE, WALL_SURFEL_HEIGHT } from "../core/constants.js";
-import { cellKey, cellToWorld, colorFromHex } from "../core/math.js";
+import { angleToDir, cellKey, cellToWorld, color, colorFromHex } from "../core/math.js";
 
 function normalFromKey(key) {
   if (key === "+x") return { x: 1, y: 0, z: 0 };
@@ -61,6 +61,7 @@ export function buildWalls(levelDef) {
         bounce1: { r: 0, g: 0, b: 0 },
         bounce2: { r: 0, g: 0, b: 0 },
         irradiance: { r: 0, g: 0, b: 0 },
+        gameplayIrradiance: { r: 0, g: 0, b: 0 },
         visualIrradiance: { r: 0, g: 0, b: 0 },
         walkable: false,
         wasWalkable: false,
@@ -69,6 +70,30 @@ export function buildWalls(levelDef) {
     }
   }
 
+  for (const mirror of levelDef.mirrors ?? []) {
+    const pos = cellToWorld(mirror.cell, levelDef, WALL_SURFEL_HEIGHT);
+    const dir = angleToDir(mirror.normalYaw);
+    wallSurfels.push({
+      id: `mirror-${mirror.id}`,
+      mirrorId: mirror.id,
+      cell: { ...mirror.cell },
+      pos,
+      normal: { x: dir.x, y: 0, z: dir.z },
+      type: "mirror",
+      albedo: mirror.albedo ? colorFromHex(mirror.albedo) : color(1, 1, 1),
+      direct: { r: 0, g: 0, b: 0 },
+      directPlaced: { r: 0, g: 0, b: 0 },
+      directCarried: { r: 0, g: 0, b: 0 },
+      bounce1: { r: 0, g: 0, b: 0 },
+      bounce2: { r: 0, g: 0, b: 0 },
+      irradiance: { r: 0, g: 0, b: 0 },
+      gameplayIrradiance: { r: 0, g: 0, b: 0 },
+      visualIrradiance: { r: 0, g: 0, b: 0 },
+      walkable: false,
+      wasWalkable: false,
+      blocksVisibility: false
+    });
+  }
+
   return { walls, wallSurfels, panelCellKeys };
 }
-

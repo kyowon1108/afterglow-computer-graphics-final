@@ -17,16 +17,16 @@ export function showTitle(overlays, show) {
 }
 
 export function showLevelComplete(overlays, level) {
-  overlays.modalTitle.textContent = `Level ${level.id} cleared`;
-  overlays.modalBody.textContent = `${level.name} restored.`;
-  overlays.modalButton.textContent = "Next";
+  overlays.modalTitle.textContent = `${level.id}단계 통과`;
+  overlays.modalBody.textContent = `${level.name} — 빛길을 완성했습니다.`;
+  overlays.modalButton.textContent = "다음";
   overlays.modal.classList.remove("hidden");
 }
 
 export function showGameComplete(overlays) {
-  overlays.modalTitle.textContent = "AFTERGLOW RESTORED";
-  overlays.modalBody.textContent = "All light paths are stable.";
-  overlays.modalButton.textContent = "Restart";
+  overlays.modalTitle.textContent = "모든 빛길이 안정되었습니다";
+  overlays.modalBody.textContent = "모든 단계를 끝냈습니다.";
+  overlays.modalButton.textContent = "다시 시작";
   overlays.modal.classList.remove("hidden");
 }
 
@@ -37,4 +37,3 @@ export function hideModal(overlays) {
 export function syncOverlays(overlays, state) {
   showTitle(overlays, state === AppState.TITLE);
 }
-

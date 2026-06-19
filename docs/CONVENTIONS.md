@@ -8,7 +8,7 @@
 | 2 | 카메라 모드 | `top/chase/fps` (TheAviator/구설계서) | **v2: `fp` 기본 + `peek` / `third` 보조**. 키: M=peek, T=third. `top/chase/close`는 레거시 입력 alias로만 취급 |
 | 3 | E 동작 | "pick/place/**drop**" | **pick / place(소켓에만)**. 중앙 crosshair 대상이 기본이며, 조준이 약간 빗나가면 근접 블록/소켓 보조 판정. **free drop 없음** |
 | 4 | 블록 상태 | `carried`/`placed` boolean (구설계서) | **`state: 'pickup' \| 'carried' \| 'placed'`** 단일 필드 + `cell`/`spawnCell` |
-| 5 | 블록 발광원(lightPos) | `cell ?? spawnCell ?? playerCell` | **state 분기**: `pickup`=발광 없음 · `carried`=playerCell(direct-only, `CARRY_RADIUS`, no bounce) · `placed`=socket cell(full+bounce) |
+| 5 | 블록 발광원(lightPos) | `cell ?? spawnCell ?? playerCell` | **state 분기**: `pickup`=발광 없음 · `carried`=playerCell(visual direct-only, `CARRY_RADIUS`, no bounce/walkable/gate) · `placed`=socket cell(full+bounce gameplay) |
 | 6 | normalMap ↔ GI | "normalMap이 N 섭동→surfel 음영" (구설계서) | **solver는 geometric normal만**. normalMap은 **visual-only** (CPU solver에 미반영) |
 | 7 | wall vs bounce surfel | 혼용 가능성 | `interiorWalls`·테두리 = **occlusion(가림)만** · **bounce source surfel은 `bouncePanels`에서만** 생성 |
 | 8 | alwaysSolid 단언 | exit 셀에 direct-only=false 단언 | start·exit는 항상 solid → **실패 단언은 entry/path 타일에** (L2 = `(2,4)`, exit `(1,4)` 아님) |
@@ -23,4 +23,7 @@
 ## v2 pivot
 현재 구현은 v2 명세에 맞춰 **desktop first-person free movement**가 기본이다. 모바일/터치 UI는 범위 밖이며, `sampleField.js`의 continuous foot sampling이 실제 gameplay ground 판정이다.
 
-> 이 9개를 코드 시작 시점에 그대로 박으면 solver / 레벨 검증 / UI가 서로 다른 "진실"을 갖지 않는다.
+## v3 active-routing addendum
+현재 v3 구현은 `docs/MECHANICS_v3.md`와 `docs/LEVELS.md`를 기준으로 aimable emitter, rotatable relay mirror, prism, mixed gate를 추가한다. `blocks`는 `kind`, `emitDir`, `coneDeg`, 선택적 `colorLocked`를 갖고, `sockets`는 선택적 `allowedBlockIds`, `mirrors`는 `normalYaw`를 갖는 별도 level entity다. 미러 floor cell은 blocked/collidable이고, placed block/prism socket cell은 이동을 막지 않는다. 색 판정의 gameplay RGB는 순수 additive RGB(`red={1,0,0}`, `green={0,1,0}`, `blue={0,0,1}`)이며 display hex와 분리한다. Carried light는 계속 visual-only다. Win은 exact exit + all gates open + empty hands + grounded 조건이다.
+
+> 위 항목을 코드와 문서의 기준으로 유지하면 solver / 레벨 검증 / UI가 서로 다른 "진실"을 갖지 않는다.

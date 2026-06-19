@@ -11,22 +11,25 @@ export function initHud() {
     bounce: document.getElementById("bounceLabel"),
     held: document.getElementById("heldLabel"),
     foot: document.getElementById("footLabel"),
+    hint: document.getElementById("hintLabel"),
     debug: document.getElementById("debugPanel")
   };
 }
 
 export function updateHud(hud, state) {
   hud.root.classList.toggle("hidden", !state.inGame);
-  hud.level.textContent = `Level ${state.levelIndex + 1} / ${state.totalLevels}`;
+  hud.level.textContent = `${state.levelIndex + 1}단계 / ${state.totalLevels}`;
   hud.objective.textContent = state.level.objective;
   hud.camera.textContent = state.cameraMode.toUpperCase();
   hud.gi.textContent = state.solveMode;
   hud.bounce.textContent = BOUNCE_VIEWS[state.bounceViewIndex] ?? "FINAL";
   const held = state.level.blocks.find((b) => b.id === state.player.heldBlockId);
-  hud.held.textContent = held ? iconFor(held.colorKey) : "none";
+  hud.held.textContent = held ? iconFor(held.colorKey) : "없음";
   const footLum = state.player.ground?.luminance ?? 0;
   const solid = state.player.ground?.supported !== false;
-  hud.foot.textContent = `${footLum.toFixed(2)} ${solid ? "solid" : "void"}`;
+  hud.foot.textContent = `${footLum.toFixed(2)} ${solid ? "단단함" : "허공"}`;
+  hud.hint.textContent = state.hint ?? "";
+  hud.hint.classList.toggle("hidden", !state.hint);
   hud.debug.classList.toggle("hidden", !state.debugVisible);
   hud.debug.textContent = state.debugText;
 }
