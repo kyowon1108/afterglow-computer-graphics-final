@@ -48,7 +48,7 @@ Latest local checks:
 - `npm run smoke:interactions`: mouse/E pick-place, ghost, undo, color, reset, GI/B, cameras, and fall/respawn passed.
 - `npm run build`: level validation and Vite build passed.
 - Full Playwright run: L1-L5 completed in-game, final state `GAME_COMPLETE` with `AFTERGLOW RESTORED`.
-- GitHub Pages: `https://kyowon1108.github.io/afterglow-computer-graphics-final/` opened in a fresh Chromium context; Start entered L1 `First Light` without console errors.
+- GitHub Pages: `https://kyowon1108.github.io/afterglow-computer-graphics-final/` opened in fresh Chromium contexts; Start entered L1 `First Light` without console errors, pointer lock became active, and mouse movement changed yaw/pitch.
 
 ## Limitations / Fallback
 The GI model is intentionally approximate and tuned for playable puzzles. `fetch-assets` writes a fallback notice and exits 0 if downloads fail; runtime then uses procedural canvas textures and the capsule robot fallback. The open-room scarcity probe currently verifies a local single-block pool of `16/196` walkable floor cells.
