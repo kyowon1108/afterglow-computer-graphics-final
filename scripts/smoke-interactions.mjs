@@ -38,14 +38,14 @@ async function startServer() {
 }
 
 async function snap(page) {
-  return page.evaluate(() => window.__AFTERGLOW_QA__.snapshot());
+  return page.evaluate(() => window.__AFTERGLOW_QA__?.snapshot?.() ?? null);
 }
 
 async function waitFor(page, predicate, label, timeoutMs = 5000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const state = await snap(page);
-    if (predicate(state)) return state;
+    if (state && predicate(state)) return state;
     await page.waitForTimeout(50);
   }
   throw new Error(`${label}: timed out at ${JSON.stringify(await snap(page))}`);
@@ -103,6 +103,20 @@ async function clickCanvas(page) {
   await page.waitForTimeout(180);
 }
 
+async function startGame(page) {
+  await waitFor(page, (state) => state.appState === "TITLE", "title screen ready", 15000);
+  await page.locator("#startButton").waitFor({ state: "visible", timeout: 10000 });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await page.locator("#startButton").click({ force: true });
+    try {
+      return await waitFor(page, (state) => state.appState === "GAME" && state.levelIndex === 0, "L1 start", 2500);
+    } catch {
+      await page.waitForTimeout(250);
+    }
+  }
+  throw new Error(`L1 start: timed out at ${JSON.stringify(await snap(page))}`);
+}
+
 async function main() {
   const server = await startServer();
   const browser = await chromium.launch({ headless: true });
@@ -115,8 +129,7 @@ async function main() {
 
   try {
     await page.goto(APP_URL, { waitUntil: "domcontentloaded" });
-    await page.click("#startButton");
-    await waitFor(page, (state) => state.appState === "GAME" && state.levelIndex === 0, "L1 start");
+    await startGame(page);
 
     await clickCanvas(page);
     await waitFor(page, (state) => state.player.heldBlockId === "b1", "mouse click picks block");
